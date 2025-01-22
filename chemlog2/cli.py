@@ -6,6 +6,7 @@ import tqdm
 
 from chemlog2.classification.charge_classifier import get_charge_category, ChargeCategories
 from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
+from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.preprocessing.chebi_data import ChEBIData
 import logging
 import os
@@ -26,30 +27,45 @@ def cli():
 
 
 def resolve_chebi_classes(classification):
+    # todo: use the ontology to automatically add indirect superclasses
     n_amino_acid_residues = classification["n_amino_acid_residues"]
     charge_category = classification["charge_category"]
     if charge_category == ChargeCategories.SALT.name:
-        return [24866] # salt
+        return [24866] # salt (there is no class peptide salt)
     if n_amino_acid_residues < 2:
+        # if not a peptide: only assign charge classes
         if charge_category == ChargeCategories.ANION.name:
-            return ["organic anion"]
+            return [25696]
         if charge_category == ChargeCategories.CATION.name:
-            return ["organic cation"]
+            return [25697]
         if charge_category == ChargeCategories.ZWITTERION.name:
-            return ["zwitterion"]
+            return [27369]
         return []
+    # peptide ... classes
     if charge_category == ChargeCategories.ANION.name:
-        return ["peptide anion"]
+        # anion, peptide anion
+        return [25696, 60334]
     if charge_category == ChargeCategories.CATION.name:
-        return ["peptide cation"]
+        return [25697, 60194]
     if charge_category == ChargeCategories.ZWITTERION.name:
         if n_amino_acid_residues == 2:
-            return ["dizwitter "]
+            # zwitterion, peptide zwitterion, dipeptide zwitterion
+            return [27369, 60466, 90799]
         if n_amino_acid_residues == 3:
-            return ["trizwitter"]
-        return ["peptide zwitterion"]
+            return [27369, 60466, 155837]
+        return [27369, 60466]
     if n_amino_acid_residues == 2:
-        return ["di"]
+        return [16670, 25676, 46761]
+    if n_amino_acid_residues == 3:
+        return [16670, 25676, 47923]
+    if n_amino_acid_residues == 4:
+        return [16670, 25676, 48030]
+    if n_amino_acid_residues == 5:
+        return [16670, 25676, 48545]
+    if n_amino_acid_residues >= 10:
+        return [16670, 15841]
+    # only oligo
+    return [16670, 25676]
 
 
 
@@ -59,13 +75,14 @@ def resolve_chebi_classes(classification):
               help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
 @click.option('--return-chebi-classes', '-c', is_flag=True, help='Return ChEBI classes')
 @click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
-def classify(chebi_version, molecules, return_chebi_classes, run_name):
+@click.option('--debug-mode', '-d', is_flag=True, help='Returns additional states, logs at debug level')
+def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mode):
     run_name = f'{time.strftime("%y%m%d_%H%M", time.localtime())}{"_" + run_name if run_name is not None else ""}'
     os.makedirs(os.path.join("results", run_name), exist_ok=True)
     logging.basicConfig(
         format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        level=logging.WARNING,
+        level=logging.DEBUG if debug_mode else logging.WARNING,
         handlers=[logging.FileHandler(os.path.join("results", run_name, "logs.log"), encoding="utf-8"),
                   logging.StreamHandler(sys.stdout)],
     )
@@ -93,15 +110,25 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name):
         logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
         charge_category = get_charge_category(row["mol"])
         logging.debug(f"Charge category is {charge_category}")
-        n_amino_acid_residues = get_n_amino_acid_residues(row["mol"])
+        n_amino_acid_residues, add_output = get_n_amino_acid_residues(row["mol"])
         logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
+        if n_amino_acid_residues > 0:
+            proteinogenics, proteinogenics_locations = get_proteinogenic_amino_acids(row["mol"], add_output["aminos"],
+                                                                                 add_output["carboxy_cs"])
+        else:
+            proteinogenics, proteinogenics_locations = [], []
         results.append({
             'chebi_id': id,
             'charge_category': charge_category.name,
-            'n_amino_acid_residues': n_amino_acid_residues
+            'n_amino_acid_residues': n_amino_acid_residues,
+            'proteinogenics': proteinogenics,
         })
+
         if return_chebi_classes:
             results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
+        if debug_mode:
+            results[-1] = {**results[-1], **add_output, "proteinogenics_locations": proteinogenics_locations}
+
         with open(os.path.join("results", run_name, "results.json"), 'a') as f:
             if skip_newline:
                 skip_newline = False
