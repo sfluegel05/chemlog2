@@ -1,11 +1,12 @@
 import logging
 
+from networkx.classes import neighbors
 from rdkit import Chem
 import networkx as nx
 from itertools import product
 
 
-def get_n_amino_acid_residues(mol):
+def get_n_amino_acid_residues(mol) -> (int, dict):
     """
     Determine the number of amino acid residues that are connected via peptide bonds in a molecule.
     This method does not distinguish between 1 and 0. None is returned if some error has occurred.
@@ -14,17 +15,21 @@ def get_n_amino_acid_residues(mol):
     """
 
     amide_bonds, amide_bond_c_idxs, amide_bond_n_idxs = get_amide_bonds(mol)
+    add_output = {"amide_bonds": [(c, n) for c, n in zip(amide_bond_c_idxs, amide_bond_n_idxs)]}
     if len(amide_bonds) == 0:
-        return 0
+        return 0, add_output
     carboxy_c_idxs = get_carboxy_derivatives(mol)
+    add_output["carboxy_cs"] = carboxy_c_idxs
     amino_group_idxs = get_amino_groups(mol, amide_bond_c_idxs)
+    add_output["aminos"] = amino_group_idxs
 
     # get carbon sceleton minus amide bonds
     carbon_graph = nx.Graph()
     for bond in mol.GetBonds():
         if bond.GetBeginAtom().GetAtomicNum() == 6 and bond.GetEndAtom().GetAtomicNum() == 6 and bond not in amide_bonds:
             carbon_graph.add_edge(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
-    chunks = list(nx.connected_components(carbon_graph))
+    chunks = [list(comp) for comp in nx.connected_components(carbon_graph)]
+    add_output["chunks"] = chunks
     # for amino groups, it might be unclear to which chunk they belong -> try all options, e.g. for CHEBI:76162
     possible_amino_chunk_assignments = []
     for amino in amino_group_idxs:
@@ -42,7 +47,8 @@ def get_n_amino_acid_residues(mol):
             chunk_assignments = [-1]
         possible_amino_chunk_assignments.append(chunk_assignments)
     # iterate over possible assignments of amino groups to chunks
-    longest_aa_chains = []
+    longest_aa_chain = []
+    longest_aa_chain_with_atoms = []
     for amino_assignment in product(*possible_amino_chunk_assignments):
         # amino acid: carboxy residue and amino group in carbon-connected subgraph
         is_amino_acid = [i in amino_assignment for i in range(len(chunks))]
@@ -58,10 +64,12 @@ def get_n_amino_acid_residues(mol):
                     if amide_c_idx in aa:
                         amino_acid_graph.add_edge(i, n_aa)
                         break
-        aa_chains = list(nx.connected_components(amino_acid_graph))
-        longest_aa_chain = max(len(aa_chain) for aa_chain in aa_chains) if len(aa_chains) > 0 else 0
-        longest_aa_chains.append(longest_aa_chain)
-    return max(longest_aa_chains) if len(longest_aa_chains) > 0 else 0
+        for aa_chain in nx.connected_components(amino_acid_graph):
+            if len(aa_chain) > len(longest_aa_chain):
+                longest_aa_chain = aa_chain
+                longest_aa_chain_with_atoms = [chunks[i] + [a for a, assign in zip(amino_group_idxs, amino_assignment) if assign == i]  for i in aa_chain]
+    add_output["longest_aa_chain"] = longest_aa_chain_with_atoms
+    return len(longest_aa_chain), add_output
 
 
 def get_amide_bonds(mol):
@@ -105,9 +113,10 @@ def get_carboxy_derivatives(mol):
     carboxy_cs = []
     for atom in mol.GetAtoms():
         if (atom.GetAtomicNum() == 6
+            # neighbor.GetAtomicNum() == 8 -> strict C(=O)Y, neighbor.GetAtomicNum() not in [1,6] -> advanced C(=X)Y
             and any(mol.GetBondBetweenAtoms(atom.GetIdx(), neighbor.GetIdx()).GetBondType() == Chem.BondType.DOUBLE
-                    and neighbor.GetAtomicNum() not in [1, 6] for neighbor in atom.GetNeighbors())
-            and any(mol.GetBondBetweenAtoms(atom.GetIdx(), neighbor.GetIdx()).GetBondType() == Chem.BondType.DOUBLE
+                    and neighbor.GetAtomicNum() == 8 for neighbor in atom.GetNeighbors())
+            and any(mol.GetBondBetweenAtoms(atom.GetIdx(), neighbor.GetIdx()).GetBondType() == Chem.BondType.SINGLE
                     and neighbor.GetAtomicNum() not in [1, 6] for neighbor in atom.GetNeighbors())
         ):
             carboxy_cs.append(atom.GetIdx())
