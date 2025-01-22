@@ -2,6 +2,10 @@ import gzip
 import json
 import logging
 import os
+import pickle
+import time
+
+import networkx as nx
 import requests
 import fastobo
 from rdkit import Chem
@@ -14,7 +18,12 @@ class ChEBIData:
 
         os.makedirs(self.base_dir, exist_ok=True)
         os.makedirs(os.path.join(self.base_dir, f"chebi_v{self.chebi_version}"), exist_ok=True)
+        # chebi: dict with entries from chebi
+        self.chebi = self.process_chebi()
+        # processed: dataframe that combines chebi data with mols from sdf file
         self.processed = self.process_data()
+        # hierarchy graph: networkx DiGraph with relations between ChEBI classes
+        self.hierarchy_graph = self.build_hierarchy_graph()
 
     @property
     def base_dir(self):
@@ -23,6 +32,14 @@ class ChEBIData:
     @property
     def chebi_path(self):
         return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "chebi.obo")
+
+    @property
+    def chebi_dict_path(self):
+        return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "chebi_dict.pkl")
+
+    @property
+    def trans_hierarchy_path(self):
+        return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "trans_hierarchy.pkl")
 
     @property
     def sdf_path(self):
@@ -44,15 +61,22 @@ class ChEBIData:
             open(self.chebi_path, "wb").write(r.content)
 
     def process_chebi(self) -> dict:
-        with open(self.chebi_path, encoding="utf-8") as chebi_raw:
-            chebi = "\n".join(l for l in chebi_raw if not l.startswith("xref:"))
-        res = {}
-        for term in fastobo.loads(chebi):
-            if term and ":" in str(term.id) and not any(
-                    [clause.raw_tag() == "is_obsolete" and clause.raw_value() == "true" for clause in term]):
-                term_id, term_properties = term_callback(term)
-                res[term_id] = term_properties
-        return res
+        self.download_chebi()
+        if not os.path.exists(self.chebi_dict_path):
+            with open(self.chebi_path, encoding="utf-8") as chebi_raw:
+                chebi = "\n".join(l for l in chebi_raw if not l.startswith("xref:"))
+            res = {}
+            for term in fastobo.loads(chebi):
+                if term and ":" in str(term.id) and not any(
+                        [clause.raw_tag() == "is_obsolete" and clause.raw_value() == "true" for clause in term]):
+                    term_id, term_properties = term_callback(term)
+                    res[term_id] = term_properties
+            with open(self.chebi_dict_path, "wb") as f:
+                pickle.dump(res, f)
+            return res
+        else:
+            with open(self.chebi_dict_path, "rb") as f:
+                return pickle.load(f)
 
     def download_sdf(self) -> None:
         if not os.path.exists(self.sdf_path):
@@ -65,8 +89,8 @@ class ChEBIData:
             open(self.sdf_path, "wb").write(gzip.decompress(r.content))
 
     def sdf_file_to_mol(self):
+        self.download_sdf()
         supplier = Chem.SDMolSupplier(self.sdf_path, removeHs=False, strictParsing=False, sanitize=False)
-        res = {}
         for mol in supplier:
             if mol is not None:
                 # turn aromatic bond types into single/double
@@ -74,24 +98,45 @@ class ChEBIData:
                     Chem.Kekulize(mol)
                 except Chem.KekulizeException as e:
                     logging.debug(f"{Chem.MolToSmiles(mol)} - {e}")
-                res[chebi_to_int(mol.GetProp("ChEBI ID"))] = mol
-        return res
+                yield chebi_to_int(mol.GetProp("ChEBI ID")), mol
 
     def process_data(self) -> pd.DataFrame:
         if not os.path.exists(self.processed_path):
-            self.download_chebi()
-            chebi = self.process_chebi()
-            self.download_sdf()
-            mols = self.sdf_file_to_mol()
             res = {}
-            for mol_id, mol in mols.items():
-                if mol_id in chebi.keys():
-                    res[mol_id] = {"mol": mol, **chebi[mol_id]}
+            for mol_id, mol in self.sdf_file_to_mol():
+                if "smiles" not in self.chebi[mol_id] or self.chebi[mol_id]["smiles"] is None:
+                    # entries with mol but without smiles are usually [ ]n specifications
+                    continue
+                if any(atom.GetAtomicNum() == 0 for atom in mol.GetAtoms()):
+                    continue
+                if mol_id in self.chebi.keys():
+                    res[mol_id] = {"mol": mol, **self.chebi[mol_id]}
             df = pd.DataFrame.from_dict(res, orient="index")
             df.to_pickle(self.processed_path)
         else:
             df = pd.read_pickle(self.processed_path)
         return df
+
+    def build_hierarchy_graph(self):
+        print(f"Building hierarchy graph")
+        start_time = time.perf_counter()
+        g = nx.DiGraph()
+        g.add_nodes_from(self.chebi.keys())
+        for chebi_id, row in self.chebi.items():
+            if "parents" in row:
+                for parent in row["parents"]:
+                    g.add_edge(parent, chebi_id)
+        print(f"Built hierarchy graph in {time.perf_counter() - start_time} seconds")
+        return g
+
+    def get_trans_hierarchy(self):
+        if not os.path.exists(self.trans_hierarchy_path):
+            g = self.hierarchy_graph
+            with open(self.trans_hierarchy_path, "wb") as f:
+                pickle.dump(nx.transitive_closure(g), f)
+            return g
+        with open(self.trans_hierarchy_path, "rb") as f:
+            return pickle.load(f)
 
 
 def chebi_to_int(s):
