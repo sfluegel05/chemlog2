@@ -1,11 +1,13 @@
 import logging
+from itertools import product
 
 from rdkit import Chem
 from gavel.logic import logic
-from gavel.logic.logic_utils import substitute_var_in_formula
+from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula
 import numpy as np
 
 from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog2.classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
 
 
 def mol_to_fol_atoms(mol: Chem.Mol):
@@ -146,3 +148,56 @@ def mol_to_fol_fragments(mol: Chem.Mol, fragment_predicate_definitions: dict, fr
     extensions["global"][-1] = True
 
     return universe, extensions
+
+
+def mol_to_fol_building_blocks(mol: Chem.Mol, functional_groups: dict):
+    universe = 0
+    # identify carbon-fragments and building blocks with python-magic
+    amide_bond_bonds = [mol.GetBondBetweenAtoms(amide_bond[0], amide_bond[2]) for amide_bond in functional_groups["amide_bond"]]
+    chunks = get_chunks(mol, amide_bond_bonds)
+    amino_chunk_assignments = get_possible_amino_chunk_assignments(
+        mol, [amino[0] for amino in functional_groups["amino_residue"]], chunks,
+        [amide_bond[0] for amide_bond in functional_groups["amide_bond"]],
+        [amide_bond[2] for amide_bond in functional_groups["amide_bond"]],
+        [carboxy[0] for carboxy in functional_groups["carboxy_residue"]],
+    )
+    building_blocks = []
+    for assignment in product(*amino_chunk_assignments):
+        building_blocks += [chunk + [amino[0] for j, amino in enumerate(functional_groups["amino_residue"])
+                                    if assignment[j] == i]
+                           for i, chunk in enumerate(chunks)]
+    # remove duplicates
+    building_blocks = [list(t) for t in {tuple(bb) for bb in building_blocks}]
+    universe = sum(len(v) for v in functional_groups.values()) + len(building_blocks) + 1
+    extensions = {
+        logic.BinaryConnective.EQ.name: np.array(
+            [[i == j for i in range(universe)] for j in range(universe)]
+        ),
+    }
+    second_order_elements = []
+    for fg, fg_atoms in list(functional_groups.items()) + [("building_block", building_blocks)]:
+        extensions[fg] = np.array([len(second_order_elements) <= i < len(second_order_elements + fg_atoms)
+                                   for i in range(universe)], dtype=np.bool_)
+        second_order_elements += fg_atoms
+    second_order_elements.append([]) # global placeholder
+
+    extensions["overlap"] = np.array(
+        [[any(atom in second_order_elements[i] for atom in second_order_elements[j]) for i in range(universe)] for j in range(universe)]
+    )
+
+    return universe, extensions, second_order_elements
+
+
+
+
+
+def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: dict):
+    variables = get_vars_in_formula(formula)
+    for variable_name, variable_value in variable_assignment.items():
+        matching_variables = [v for v in variables if v.symbol.lower() == variable_name.lower()]
+        if len(matching_variables) == 0:
+            logging.warning(f"Variable {variable_name} not found in formula")
+        if len(matching_variables) > 1:
+            logging.warning(f"Multiple variables with name {variable_name} found in formula")
+        formula = substitute_var_in_formula(formula, matching_variables[0], variable_value)
+    return formula

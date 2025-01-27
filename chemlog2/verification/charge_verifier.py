@@ -1,15 +1,10 @@
-import logging
-
-import numpy as np
-
 from chemlog2.classification.charge_classifier import ChargeCategories
 from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
-from gavel.logic.logic_utils import get_vars_in_formula, substitute_var_in_formula
 from gavel.logic import logic
 import os
 
-from chemlog2.preprocessing.mol_to_fol import mol_to_fol_atoms, mol_to_fol_fragments
+from chemlog2.preprocessing.mol_to_fol import mol_to_fol_fragments, apply_variable_assignment
 from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
@@ -81,18 +76,6 @@ class ChargeVerifier:
             return ModelCheckerOutcome.MODEL_FOUND, proof_attempts
 
         return ModelCheckerOutcome.UNKNOWN, []
-
-
-def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: dict):
-    variables = get_vars_in_formula(formula)
-    for variable_name, variable_value in variable_assignment.items():
-        matching_variables = [v for v in variables if v.symbol.lower() == variable_name.lower()]
-        if len(matching_variables) == 0:
-            logging.warning(f"Variable {variable_name} not found in formula")
-        if len(matching_variables) > 1:
-            logging.warning(f"Multiple variables with name {variable_name} found in formula")
-        formula = substitute_var_in_formula(formula, matching_variables[0], variable_value)
-    return formula
 
 
 if __name__ == "__main__":

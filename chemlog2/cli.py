@@ -5,8 +5,10 @@ import click
 import tqdm
 
 from chemlog2.classification.charge_classifier import get_charge_category, ChargeCategories
+from chemlog2.classification.functional_groups_verifier import FunctionalGroupsVerifier
 from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
+from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
 from chemlog2.preprocessing.chebi_data import ChEBIData
 from chemlog2.verification.charge_verifier import ChargeVerifier
 import logging
@@ -16,6 +18,7 @@ import sys
 
 from chemlog2.verification.charge_verifier import ChargeVerifier
 from chemlog2.verification.model_checking import ModelCheckerOutcome
+from chemlog2.verification.peptide_size_verifier import PeptideSizeVerifier
 
 
 class LiteralOption(click.Option):
@@ -36,7 +39,7 @@ def resolve_chebi_classes(classification):
     n_amino_acid_residues = classification["n_amino_acid_residues"]
     charge_category = classification["charge_category"]
     if charge_category == ChargeCategories.SALT.name:
-        return [24866] # salt (there is no class peptide salt)
+        return [24866]  # salt (there is no class peptide salt)
     if n_amino_acid_residues < 2:
         # if not a peptide: only assign charge classes
         if charge_category == ChargeCategories.ANION.name:
@@ -71,7 +74,6 @@ def resolve_chebi_classes(classification):
         return [16670, 15841]
     # only oligo
     return [16670, 25676]
-
 
 
 @cli.command()
@@ -118,8 +120,9 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
         n_amino_acid_residues, add_output = get_n_amino_acid_residues(row["mol"])
         logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
         if n_amino_acid_residues > 0:
-            proteinogenics, proteinogenics_locations = get_proteinogenic_amino_acids(row["mol"], add_output["aminos"],
-                                                                                 add_output["carboxy_cs"])
+            proteinogenics, proteinogenics_locations = get_proteinogenic_amino_acids(row["mol"],
+                                                                                     add_output["amino_residue"],
+                                                                                     add_output["carboxy_residue"])
         else:
             proteinogenics, proteinogenics_locations = [], []
         results.append({
@@ -141,7 +144,8 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
                 f.write(",\n")
             json.dump(results[-1], f, indent=4)
     with open(os.path.join("results", run_name, "results.json"), 'a') as f:
-            f.write("]")
+        f.write("]")
+
 
 @cli.command()
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
@@ -162,25 +166,65 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
     data = ChEBIData(chebi_version)
     with open(os.path.join(results_dir, "results.json"), "r") as f:
         results = json.load(f)
-    verifier = ChargeVerifier()
+    charge_verifier = ChargeVerifier()
+    functional_groups_verifier = FunctionalGroupsVerifier()
+    peptide_size_verifier = PeptideSizeVerifier()
     res = []
 
     for result in tqdm.tqdm(results):
         if len(molecules) > 0 and result["chebi_id"] not in molecules:
             continue
+        outcome = {}
         expected_charge = ChargeCategories[result["charge_category"]]
         mol = data.processed.loc[result["chebi_id"], "mol"]
-        verified = verifier.verify_charge_category(mol, expected_charge, {})
+        outcome["charge"] = charge_verifier.verify_charge_category(mol, expected_charge, {})
+
+        # functional groups
+        expected_groups = {}
+        if "amide_bond" in result:
+            expected_groups["amide_bond"] = result["amide_bond"]
+        else:
+            _, amide_c, amide_o, amide_n = get_amide_bonds(mol)
+            expected_groups["amide_bond"] = [(c, o, n) for c, o, n in zip(amide_c, amide_o, amide_n)]
+        if "amino_residue" in result:
+            expected_groups["amino_residue"] = result["amino_residue"]
+        else:
+            expected_groups["amino_residue"] = [(n,) for n in
+                                                get_amino_groups(mol, [c for c, _, _ in expected_groups["amide_bond"]])]
+        if "carboxy_residue" in result:
+            expected_groups["carboxy_residue"] = result["carboxy_residue"]
+        else:
+            expected_groups["carboxy_residue"] = list(get_carboxy_derivatives(mol))
+        outcome["functional_groups"] = functional_groups_verifier.verify_functional_groups(mol, expected_groups)
+
+        # n amino acids
+        expected_n = result["n_amino_acid_residues"]
+        if expected_n >= 2:
+            if "longest_aa_chain" in result:
+                aars = result["longest_aa_chain"]
+            else:
+                add_output = get_n_amino_acid_residues(mol)[1]
+                aars = add_output["longest_aa_chain"]
+            outcome["size"] = peptide_size_verifier.verify_n_plus_amino_acids(
+                mol, expected_n, expected_groups, {f"A{i}": aar for i, aar in enumerate(aars)}
+             )
+        else:
+            # if there are no amino acids, then there is nothing to prove
+            outcome["size"] = ModelCheckerOutcome.MODEL_FOUND_INFERRED, None
+
         res.append({
             "chebi_id": result["chebi_id"],
             "expected_charge": expected_charge.name,
-            "outcome": verified[0].name
+            "outcome": {key: o[0].name for key, o in outcome.items()}
         })
+
         if debug_mode:
-            res[-1]["proof_attempts"] = verified[1]
-        if verified[0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-            logging.warning(f"Verification failed for CHEBI:{result['chebi_id']} (expected: {expected_charge.name})")
+            res[-1]["proof_attempts"] = {key: o[1] for key, o in outcome.items() if o[1] is not None}
+        if any(o[0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED] for o in
+               outcome.values()):
+            logging.warning(f"Verification failed for CHEBI:{result['chebi_id']} \n"
+                            f"Expected charge: {expected_charge.name}, got: {outcome['charge'][0].name}\n"
+                            f"Expected groups: {expected_groups}, got {outcome['functional_groups'][0].name}\n"
+                            f"Expected {expected_n} amino acids, got {outcome['size'][0].name}")
     with open(os.path.join(results_dir, f"verification_fol_{timestamp}.json"), 'w') as f:
         json.dump(res, f, indent=4)
-
-

@@ -6,8 +6,9 @@ from chemlog2.classification.peptide_size_classifier import get_carboxy_derivati
 from chemlog2.results import plot_mol
 
 
-def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxy_cs):
+def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
     Chem.rdCIPLabeler.AssignCIPLabels(mol)
+    carboxy_cs = [c for c, _, _ in carboxys]
     side_chains = identify_side_chains_smarts(mol, amino_ns, carboxy_cs)
     # identify proteinogenic amino acids
     # re-use knowledge about accepted amino group and carboxylic acid derivatives

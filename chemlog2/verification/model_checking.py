@@ -185,7 +185,7 @@ class ModelChecker(AbstractModelChecker):
                     self.calculated_extensions[literal.predicate][
                         tuple(literal.arguments)
                     ] = model_found
-                res = self.calculated_extensions[literal.predicate][literal.arguments]
+                res = self.calculated_extensions[literal.predicate][tuple(literal.arguments)]
             else:
                 res = False
             return not res if negated else res
