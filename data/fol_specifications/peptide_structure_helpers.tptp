@@ -1,0 +1,5 @@
+% at carbon-fragment level
+% assumes that amide_bond, building_block, amino_residue and carboxy_residue are part of the extension
+% building_block is python-magic, the rest are defined in functional_groups.tptp
+
+fof(amino_acid_residue, axiom, amino_acid_residue(X) <=> ?[A, R]: (building_block(X) & amino_residue(A) & carboxy_residue(R) & overlap(A, X) & overlap(R, X))).

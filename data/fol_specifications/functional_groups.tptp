@@ -1,0 +1,9 @@
+% at atom-level, introduce relevant functional groups
+% note that amino depends on amide 
+
+% cnf conversion of original formula
+fof(amide, axiom, amide_bond(Ac, Ao, An) <=> (c(Ac) & o(Ao) & n(An) & (bSINGLE(Ac, Ao) | bDOUBLE(Ac, Ao)) & (bSINGLE(Ac, Ao) | bSINGLE(Ac, An)) & (bDOUBLE(Ac, An) | bDOUBLE(Ac, Ao)) & (bDOUBLE(Ac, An) | bSINGLE(Ac, An)) & (has_1_hs(Ao) | charge_m1(Ao) | bDOUBLE(Ac, Ao)) & (has_1_hs(Ao) | charge_m1(Ao) | bSINGLE(Ac, An)) )).
+% helper formula for amino (avoids universal quantifier), transformed to CNF, replaced ~c with ~(c | h) to capture rare cases where there is an H atom in the molecule
+fof(has_amino_nonconforming_neighbor, axiom, has_amino_nonconforming_neighbor(An, Ao) <=> ?[Neighbor]: (has_bond_to(An, Neighbor) & (~c(Neighbor) | ~bSINGLE(An, Neighbor)) & (~c(Neighbor) | ~bDOUBLE(An, Neighbor) | ~amide_bond(Neighbor, Ao, An)) & (~h(Neighbor) | ~bSINGLE(An, Neighbor)) & (~h(Neighbor) | ~bDOUBLE(An, Neighbor) | ~amide_bond(Neighbor, Ao, An)) ) ).
+fof(amino, axiom, amino_residue(An) <=> ?[Ao]: (n(An) & ~has_amino_nonconforming_neighbor(An, Ao))).
+fof(carboxy, axiom, carboxy_residue(Ac, Ad, As) <=> (c(Ac) & o(Ad) & bDOUBLE(Ac, Ad) & bSINGLE(Ac, As) )).
