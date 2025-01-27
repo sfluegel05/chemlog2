@@ -106,7 +106,7 @@ def sample_results(results_dir, target_cls: int, data: ChEBIData, n_samples=10, 
         pos_label = id in trans_hierarchy.successors(target_cls)
         pos_pred = target_cls in row["chebi_classes"]
         if (pos_label and not pos_pred and sample_target == "fns") or (
-                pos_pred and not pos_label and sample_target == "fps"):
+                pos_pred and not pos_label and sample_target == "fps") or (pos_pred and pos_label and sample_target == "tps"):
             n_samples -= 1
             # FN
             print(f"| {id} | {data.processed.loc[id, 'name']} | {target_cls} | "
@@ -128,9 +128,9 @@ def plot_mol(mol):
     plt.show()
 
 if __name__ == "__main__":
-    results_dir1 = os.path.join("results", "250121_1612_CXY")
+    #results_dir1 = os.path.join("results", "250121_1612_CXY")
     results_dir2 = os.path.join("results", "250121_1622_COY")
     data = ChEBIData(239)
     # md_print_eval(json.load(open(os.path.join(results_dir, "eval.json"), "rb")), data)
-    compare_2_runs(results_dir1, results_dir2, data)
-    # sample_results(results_dir, 48545, data, sample_target="fps")
+    #compare_2_runs(results_dir1, results_dir2, data)
+    sample_results(results_dir2, 24866, data, sample_target="tps")

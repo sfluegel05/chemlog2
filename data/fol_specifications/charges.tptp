@@ -1,0 +1,6 @@
+% these are formulas for classifying molecules by charge. The underlying domain consists of the fragments of the molecules (i.e., the connected parts). The properties of the fragments are specified in fragment_properties.tptp
+
+fof(salt, axiom, salt(Global) <=> ?[Anion,Cation]: (frag_charge_negative(Anion) & frag_charge_positive(Cation) & fragment(Anion) & fragment(Cation) & ~overlap(Anion, Cation) & global(Global))).
+fof(zwitterion, axiom, zwitterion(Global) <=> ?[Frag,Global]: (global(Global) & net_charge_neutral(Global) & fragment(Frag) & frag_zwitterionic(Frag))).
+fof(anion, axiom, anion(Global) <=> (global(Global) & ~salt(Global) & net_charge_negative(Global))).
+fof(cation, axiom, cation(Global) <=> (global(Global) & ~salt(Global) & net_charge_positive(Global))).

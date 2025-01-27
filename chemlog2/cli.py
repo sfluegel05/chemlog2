@@ -8,10 +8,15 @@ from chemlog2.classification.charge_classifier import get_charge_category, Charg
 from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.preprocessing.chebi_data import ChEBIData
+from chemlog2.verification.charge_verifier import ChargeVerifier
 import logging
 import os
 import ast
 import sys
+
+from chemlog2.verification.charge_verifier import ChargeVerifier
+from chemlog2.verification.model_checking import ModelCheckerOutcome
+
 
 class LiteralOption(click.Option):
     def type_cast_value(self, ctx, value):
@@ -137,3 +142,45 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
             json.dump(results[-1], f, indent=4)
     with open(os.path.join("results", run_name, "results.json"), 'a') as f:
             f.write("]")
+
+@cli.command()
+@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
+@click.option('--results-dir', '-r', type=str, required=True, help='Directory where results.json to analyse is located')
+@click.option('--debug-mode', '-d', is_flag=True, help='Returns additional states')
+@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
+              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
+def verify(chebi_version, results_dir, debug_mode, molecules):
+    timestamp = time.strftime("%y%m%d_%H%M", time.localtime())
+    logging.basicConfig(
+        format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging.DEBUG if debug_mode else logging.WARNING,
+        handlers=[logging.FileHandler(
+            os.path.join(results_dir, f"logs_verify_{timestamp}.log"),
+            encoding="utf-8"), logging.StreamHandler(sys.stdout)],
+    )
+    data = ChEBIData(chebi_version)
+    with open(os.path.join(results_dir, "results.json"), "r") as f:
+        results = json.load(f)
+    verifier = ChargeVerifier()
+    res = []
+
+    for result in tqdm.tqdm(results):
+        if len(molecules) > 0 and result["chebi_id"] not in molecules:
+            continue
+        expected_charge = ChargeCategories[result["charge_category"]]
+        mol = data.processed.loc[result["chebi_id"], "mol"]
+        verified = verifier.verify_charge_category(mol, expected_charge, {})
+        res.append({
+            "chebi_id": result["chebi_id"],
+            "expected_charge": expected_charge.name,
+            "outcome": verified[0].name
+        })
+        if debug_mode:
+            res[-1]["proof_attempts"] = verified[1]
+        if verified[0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+            logging.warning(f"Verification failed for CHEBI:{result['chebi_id']} (expected: {expected_charge.name})")
+    with open(os.path.join(results_dir, f"verification_fol_{timestamp}.json"), 'w') as f:
+        json.dump(res, f, indent=4)
+
+

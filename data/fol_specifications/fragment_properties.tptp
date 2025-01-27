@@ -1,0 +1,7 @@
+% relevant properties of molecular fragments, used to classify e.g. salts
+% the domain are the atoms of a single fragment
+
+% net_charge_ uses a domain element for global properties. In theory, this should work with frag_charge_positive <=> net_charge_positive, but the model checker needs an existential quanitifier, and the tptp parser cannot handle empty quantifiers nor 0-ary predicates
+fof(frag_charge_positive, axiom, frag_charge_positive(Global) <=> (global(Global) & net_charge_positive(Global))).
+fof(frag_charge_negative, axiom, frag_charge_negative(Global) <=> (global(Global) & net_charge_negative(Global))).
+fof(frag_zwitterionic, axiom, frag_zwitterionic(Global) <=> ?[Anion, Cation]: (charge_p(Cation) & charge_n(Anion) & ~has_neighbor_ion(Anion) & ~has_neighbor_ion(Cation) & global(Global))).

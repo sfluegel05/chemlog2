@@ -71,8 +71,8 @@ side_chains = {
     "W": "[CH2X4][CX3]1=[CX3H][NX3][CX3]2=[CX3]1[CX3]=[CX3H][CX3H]=[CX3]2",  # tryptophan
     "Y": "[CH2X4][CX3]1=[CX3H][CX3H]=[CX3]([OX2H])[CX3H]=[CX3H]1",  # tyrosine
     "F": "[CH2X4][CX3]1=[CX3H][CX3H]=[CX3H][CX3H]=[CX3H]1",  # phenylalanine
-    "H": "[CH2X4][CX3]1=[CX3H][NX3][CX3H][NX2]1",  # histidine
-    "H_iso": "[CH2X4][CX3]1=[CX3H][NX2][CX3H][NX3]1",  # histidine isomer
+    "H": "[CH2X4][CX3]1=[CX3H][NX3][CX3H]=[NX2]1",  # histidine
+    "H_iso": "[CH2X4][CX3]1=[CX3H][NX2]=[CX3H][NX3]1",  # histidine isomer
     "R": ("[CH2X4][CH2X4][CH2X4][NHX3][CH0X3](=[NX3+,NX2])N", [3, 6], []),  # arginine
     "R_iso": ("[CH2X4][CH2X4][CH2X4][NX2]=[CH0X3](N)N", [5, 6], []),  # arginine isomer
     "O": ("[CH2X4][CH2X4][CH2X4][CH2X4]N[CX3][CH1X4]1[NX2]=[CH1X3][CH2X4][CH1X4]([CH3X4])1", [4], [5]), # pyrrolysine
