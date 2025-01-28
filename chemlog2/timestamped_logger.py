@@ -37,4 +37,4 @@ class TimestampedLogger:
 
     def save_items(self, command, items):
         with open(os.path.join(self.results_dir, f"{command}.json"), 'w') as f:
-            json.dump(items, f, indent=4)
+            json.dump(items, f, indent=2)

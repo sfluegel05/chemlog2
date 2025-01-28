@@ -6,12 +6,13 @@ from gavel.logic import logic
 from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula
 import numpy as np
 
+from chemlog2.preprocessing.chebi_data import ChEBIData
 from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
 from chemlog2.classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
 
 
 def mol_to_fol_atoms(mol: Chem.Mol):
-    # assumes: no wildcards, no aromaticity (kekulized), no h atoms
+    # assumes: no wildcards, no aromaticity (kekulized), no h atoms (unless they have been added explicitly)
     universe = mol.GetNumAtoms() + 1
     extensions = {
         logic.BinaryConnective.EQ.name: np.array(
@@ -19,6 +20,7 @@ def mol_to_fol_atoms(mol: Chem.Mol):
         ),
         "atom": np.ones(universe, dtype=np.bool_),
     }
+    extensions["atom"][-1] = False # last position is global, not an atom
     try:
         Chem.rdCIPLabeler.AssignCIPLabels(mol)
     except Exception as e:
@@ -41,6 +43,11 @@ def mol_to_fol_atoms(mol: Chem.Mol):
                 if predicate_symbol_charge not in extensions:
                     extensions[predicate_symbol_charge] = np.zeros(universe, dtype=np.bool_)
                 extensions[predicate_symbol_charge][atom_idx] = True
+        else:
+            predicate_symbol_charge = "charge0"
+            if predicate_symbol_charge not in extensions:
+                extensions[predicate_symbol_charge] = np.zeros(universe, dtype=np.bool_)
+            extensions[predicate_symbol_charge][atom_idx] = True
         # add predicates for h atoms
         # exception: if molecule only consists of a single H atom, don't assume that a second H has to be added
         if universe != 1 or atom.GetAtomicNum() != 1:
@@ -201,3 +208,55 @@ def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: 
             logging.warning(f"Multiple variables with name {variable_name} found in formula")
         formula = substitute_var_in_formula(formula, matching_variables[0], variable_value)
     return formula
+
+
+def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: False):
+    clauses = []
+    try:
+        Chem.rdCIPLabeler.AssignCIPLabels(mol)
+    except Exception as e:
+        logging.error(
+            f"Failed to assign CIP labels to molecule, skipping chirality-related clauses: {e}"
+        )
+
+    v = [logic.Variable(f"A{i}") for i in range(mol.GetNumAtoms() + 1)]
+
+    for atom in mol.GetAtoms():
+        variable = v[atom.GetIdx()]
+        clauses.append(logic.PredicateExpression("atom", [variable]))
+        # skip wildcards
+        if atom.GetAtomicNum() == 0:
+            continue
+        clauses.append(logic.PredicateExpression(atom.GetSymbol().lower(), [variable]))
+        charge = atom.GetFormalCharge()
+        clauses.append(logic.PredicateExpression(f"charge{'_m' + str(-1 * charge) if charge < 0 else str(charge)}", [variable]))
+        if atom.HasProp("_CIPCode"):
+            clauses.append(logic.PredicateExpression(f"cip_code_{atom.GetProp('_CIPCode')}", [variable]))
+        if not allow_additional_bonds and (len(list(mol.GetAtoms())) != 1 or atom.GetAtomicNum() != 1):
+            num_hs = atom.GetTotalNumHs()
+            clauses.append(logic.PredicateExpression(f"has_{num_hs}_hs", [variable]))
+
+    for bond in mol.GetBonds():
+        left = v[bond.GetBeginAtomIdx()]
+        right = v[bond.GetEndAtomIdx()]
+        clauses.append(logic.PredicateExpression("has_bond_to", [left, right]))
+        clauses.append(logic.PredicateExpression(f"b{bond.GetBondType()}", [left, right]))
+        if bond.GetStereo() != Chem.BondStereo.STEREONONE:
+            clauses.append(logic.PredicateExpression(f"b{bond.GetStereo().name}", [left, right]))
+
+    if not allow_additional_bonds:
+        if Chem.GetFormalCharge(mol) < 0:
+            clauses.append(logic.PredicateExpression("net_charge_negative", [v[-1]]))
+        elif Chem.GetFormalCharge(mol) > 0:
+            clauses.append(logic.PredicateExpression("net_charge_positive", [v[-1]]))
+        else:
+            clauses.append(logic.PredicateExpression("net_charge_neutral", [v[-1]]))
+
+    return logic.QuantifiedFormula(logic.Quantifier.EXISTENTIAL, v,
+                                   logic.NaryFormula(logic.BinaryConnective.CONJUNCTION, clauses))
+
+
+if __name__ == "__main__":
+    data = ChEBIData(239)
+    for _, row in  data.processed[[83813 in row["parents"] for _, row in data.processed.iterrows()]].iterrows():
+        print(row["name"], mol_to_fol_formula(row["mol"], allow_additional_bonds=False))

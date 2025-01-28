@@ -14,12 +14,14 @@ def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
     # re-use knowledge about accepted amino group and carboxylic acid derivatives
     results = []
     results_atoms = []
+    results_atoms_sorted = [] # results_atoms in the order expected for verification, without carboxy heteroatoms
     for n in amino_ns:
         for alpha_c in mol.GetAtomWithIdx(n).GetNeighbors():
             if alpha_c.GetAtomicNum() == 6:
                 for carboxy_c in alpha_c.GetNeighbors():
                     if carboxy_c.GetIdx() in carboxy_cs:
                         aa = [n, alpha_c.GetIdx(), carboxy_c.GetIdx()]
+                        aa_sorted = [n, alpha_c.GetIdx(), carboxy_c.GetIdx()]
                         aa += [neighbor.GetIdx() for neighbor in carboxy_c.GetNeighbors()
                                if neighbor.GetIdx() not in aa and neighbor.GetIdx() not in amino_ns]
                         side_chain_start = [neighbor for neighbor in alpha_c.GetNeighbors()
@@ -27,6 +29,7 @@ def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
                         if len(side_chain_start) == 0:
                             results.append("G")
                             results_atoms.append(aa)
+                            results_atoms_sorted.append(aa_sorted)
                         if len(side_chain_start) == 1:
                             start_at = side_chain_start[0].GetIdx()
                             amino_acid = match_side_chain_to_backbone(mol,
@@ -38,7 +41,8 @@ def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
                                 if alpha_c.HasProp("_CIPCode") and alpha_c.GetProp("_CIPCode") == expected_cip_code:
                                     results.append(amino_acid[0])
                                     results_atoms.append(aa + amino_acid[1])
-    return results, results_atoms
+                                    results_atoms_sorted.append(aa_sorted + amino_acid[1])
+    return results, results_atoms, results_atoms_sorted
 
 def match_side_chain_to_backbone(mol, side_chains, backbone):
     # assume that backbone has 4 atoms, NC(C)R where the second C belongs to a carboxylic acid derivative
@@ -64,8 +68,7 @@ def match_side_chain_to_backbone(mol, side_chains, backbone):
 
 
 side_chains = {
-    # order is important - these will match e.g. both valine and alanine for a valine residue
-    # -> first, try valine SMARTS and don't get to alanine
+    # order is important - some matches are subsets of others
     # amino and carboxylic acid groups are underspecified -> we already have those, including their derivatives
     # in peptides -> the lists include the indices in the matches where amino / carboxylic acid residues are expected
     # assume that input is kekulized, no aromaticity
@@ -94,7 +97,6 @@ side_chains = {
     "S": "[CH2X4][OX2]", # serine
     "A": "[CH3X4]",  # alanine
 }
-proline = "[$([NX3H,NX4H2+]),$([NX3](C)(C)(C))]1[CX4H]([CH2][CH2][CH2]1)[CX3](=[OX1])[O,N]"
 
 def identify_side_chains_smarts(mol, amino_ns, carboxy_cs):
     side_chain_matches = {}
@@ -102,7 +104,7 @@ def identify_side_chains_smarts(mol, amino_ns, carboxy_cs):
     for side_chain, specification in side_chains.items():
         smarts = specification[0] if isinstance(specification, tuple) else specification
         smarts_matches = mol.GetSubstructMatches(Chem.MolFromSmarts(smarts))
-        # check if amino / carboylic acid groups are present
+        # check if amino / carboxylic acid groups are present
         if isinstance(specification, tuple):
             smarts_matches = [match for match in smarts_matches
                               if all(match[amino_location] in amino_ns for amino_location in specification[1])]
