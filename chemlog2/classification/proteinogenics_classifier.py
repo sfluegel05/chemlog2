@@ -36,8 +36,8 @@ def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
                                 side_chains, [n, alpha_c.GetIdx(), carboxy_c.GetIdx(), start_at])
                             if amino_acid is not None:
                                 # distinguish R- and L-amino acids, only one side chain per amino acid is allowed
-                                # L-cysteine has a different CIP code
-                                expected_cip_code = "R" if amino_acid[0] == "C" else "S"
+                                # L-cysteine and L-selenocysteine have a different CIP code
+                                expected_cip_code = "R" if amino_acid[0] in ["C", "U"] else "S"
                                 if alpha_c.HasProp("_CIPCode") and alpha_c.GetProp("_CIPCode") == expected_cip_code:
                                     results.append(amino_acid[0])
                                     results_atoms.append(aa + amino_acid[1])
@@ -115,6 +115,22 @@ def identify_side_chains_smarts(mol, amino_ns, carboxy_cs):
 
 
 if __name__ == "__main__":
-    mol = Chem.MolFromSmiles("NCC(=O)N[C@@H](Cc1ccccc1)C(O)=O")
-    print(get_proteinogenic_amino_acids(mol, get_amino_groups(mol, []), get_carboxy_derivatives(mol)))
-    plot_mol(mol)
+    from itertools import product
+    prod = list(product([
+        "has_1_hs(A4)",
+        "amino(A4)",
+        "bSINGLE(A4, A5)",
+        "bDOUBLE(A5, A6)",
+        "has_2_hs(A6)|has_1_hs(A6)",
+        "has_2_hs(A6)|charge0(A6)",
+        "charge1(A6)|has_1_hs(A6)",
+        "charge1(A6)|charge0(A6)",
+    ], [
+        "has_0_hs(A4)",
+        "bDOUBLE(A4, A5)",
+        "bSINGLE(A5, A6)",
+        "has_2_hs(A6)",
+        "charge0(A6)"
+    ]))
+    prod = ["(" + "|".join(list(p)) + ")" for p in prod]
+    print(" & ".join(prod))

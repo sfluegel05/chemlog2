@@ -208,11 +208,14 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
                 mol, [amino[0] for amino in expected_groups["amino_residue"]], expected_groups["carboxy_residue"]
             )
             expected_proteinogenics = [(code, atoms) for code, atoms in zip(proteinogenics, proteinogenics_locations_no_carboxy)]
-        # only take first atoms of functional groups
-        atom_level_functional_groups = {"amino_residue_n": [amino[0] for amino in expected_groups["amino_residue"]],
-                                        "carboxy_residue_c": [carboxy[0] for carboxy in expected_groups["carboxy_residue"]]}
-        outcome["proteinogenics"] = proteinogenics_verifier.verify_proteinogenics(mol, atom_level_functional_groups,
-                                                                                  expected_proteinogenics)
+        if len(expected_proteinogenics) > 0:
+            # only take first atoms of functional groups
+            atom_level_functional_groups = {"amino_residue_n": [amino[0] for amino in expected_groups["amino_residue"]],
+                                            "carboxy_residue_c": [carboxy[0] for carboxy in expected_groups["carboxy_residue"]]}
+            outcome["proteinogenics"] = proteinogenics_verifier.verify_proteinogenics(mol, atom_level_functional_groups,
+                                                                                      expected_proteinogenics)
+        else:
+            outcome["proteinogenics"] = ModelCheckerOutcome.MODEL_FOUND_INFERRED, None
 
 
         res.append({

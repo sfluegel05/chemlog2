@@ -39,18 +39,22 @@ class ProteinogenicsVerifier:
             extensions[fg_name][fg_atom] = True
         model_checker = ModelChecker(
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
-                            for pred, formula in {**self.proteinogenics_defs, **self.helpers}.items()}
+                            for pred, formula in self.helpers.items()}
         )
         proof_attempts = []
         all_successful = True
         for amino_acid_code, atoms in expected_proteinogenics:
-                # only use a simple predicate expression -> the real work is in applying the predicate definitions
-                target_formula = logic.PredicateExpression(f"aa_{amino_acid_code}", atoms)
-                try:
-                    result = model_checker.find_model(target_formula)[0]
-                except Exception as e:
-                    logging.error(f"Error while verifying {amino_acid_code} with atoms {atoms}: {e}")
-                    result = ModelCheckerOutcome.ERROR
+                target_formula = self.proteinogenics_defs[f"aa_{amino_acid_code}"]
+                if len(atoms) != len(target_formula.left.arguments):
+                    logging.warning(f"Expected {len(target_formula.left.arguments)} atoms for {amino_acid_code}, got {len(atoms)}")
+                    result = ModelCheckerOutcome.NO_MODEL_INFERRED
+                else:
+                    target_formula = apply_variable_assignment(target_formula.right, {var.symbol: atom for var, atom in zip(target_formula.left.arguments, atoms)})
+                    try:
+                        result = model_checker.find_model(target_formula)[0]
+                    except Exception as e:
+                        logging.error(f"Error while verifying {amino_acid_code} with atoms {atoms}: {e}")
+                        result = ModelCheckerOutcome.ERROR
                 if result not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                     all_successful = False
                 proof_attempts.append(
