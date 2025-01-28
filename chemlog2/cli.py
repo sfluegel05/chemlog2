@@ -10,6 +10,7 @@ from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_res
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
 from chemlog2.preprocessing.chebi_data import ChEBIData
+from chemlog2.timestamped_logger import TimestampedLogger
 from chemlog2.verification.charge_verifier import ChargeVerifier
 import logging
 import os
@@ -84,19 +85,10 @@ def resolve_chebi_classes(classification):
 @click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
 @click.option('--debug-mode', '-d', is_flag=True, help='Returns additional states, logs at debug level')
 def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mode):
-    run_name = f'{time.strftime("%y%m%d_%H%M", time.localtime())}{"_" + run_name if run_name is not None else ""}'
-    os.makedirs(os.path.join("results", run_name), exist_ok=True)
-    logging.basicConfig(
-        format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        level=logging.DEBUG if debug_mode else logging.WARNING,
-        handlers=[logging.FileHandler(os.path.join("results", run_name, "logs.log"), encoding="utf-8"),
-                  logging.StreamHandler(sys.stdout)],
-    )
-    with open(os.path.join("results", run_name, "results.json"), 'a') as f:
-        f.write("[\n")
-    # todo dump config
-
+    json_logger = TimestampedLogger(None, run_name, debug_mode)
+    json_logger.start_run("classify", {"chebi_version": chebi_version, "molecules": molecules,
+                                       "return_chebi_classes": return_chebi_classes, "run_name": run_name,
+                                       "debug_mode": debug_mode})
     data = ChEBIData(chebi_version).processed
     if len(molecules) > 0:
         data_filtered = data.loc[data.index.isin(molecules)]
@@ -112,9 +104,11 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
-    skip_newline = True
+    save_results_every_n = 100
+    save_results = save_results_every_n
     for id, row in tqdm.tqdm(data_filtered.iterrows()):
         logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
+        start_time = time.perf_counter()
         charge_category = get_charge_category(row["mol"])
         logging.debug(f"Charge category is {charge_category}")
         n_amino_acid_residues, add_output = get_n_amino_acid_residues(row["mol"])
@@ -130,21 +124,17 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
             'charge_category': charge_category.name,
             'n_amino_acid_residues': n_amino_acid_residues,
             'proteinogenics': proteinogenics,
+            'time': f"{time.perf_counter() - start_time:.3f}"
         })
 
         if return_chebi_classes:
             results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
         if debug_mode:
             results[-1] = {**results[-1], **add_output, "proteinogenics_locations": proteinogenics_locations}
-
-        with open(os.path.join("results", run_name, "results.json"), 'a') as f:
-            if skip_newline:
-                skip_newline = False
-            else:
-                f.write(",\n")
-            json.dump(results[-1], f, indent=4)
-    with open(os.path.join("results", run_name, "results.json"), 'a') as f:
-        f.write("]")
+        save_results -= 1
+        if save_results <= 0:
+            save_results = save_results_every_n
+            json_logger.save_items("classify", results)
 
 
 @cli.command()
@@ -154,15 +144,10 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
               help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
 def verify(chebi_version, results_dir, debug_mode, molecules):
-    timestamp = time.strftime("%y%m%d_%H%M", time.localtime())
-    logging.basicConfig(
-        format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        level=logging.DEBUG if debug_mode else logging.WARNING,
-        handlers=[logging.FileHandler(
-            os.path.join(results_dir, f"logs_verify_{timestamp}.log"),
-            encoding="utf-8"), logging.StreamHandler(sys.stdout)],
-    )
+    json_logger = TimestampedLogger(results_dir, debug_mode=debug_mode)
+    json_logger.start_run("verify",
+                          {"chebi_version": chebi_version, "results_dir": results_dir, "debug_mode": debug_mode,
+                           "molecules": molecules})
     data = ChEBIData(chebi_version)
     with open(os.path.join(results_dir, "results.json"), "r") as f:
         results = json.load(f)
@@ -170,6 +155,8 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
     functional_groups_verifier = FunctionalGroupsVerifier()
     peptide_size_verifier = PeptideSizeVerifier()
     res = []
+    save_results_every_n = 100
+    save_results = save_results_every_n
 
     for result in tqdm.tqdm(results):
         if len(molecules) > 0 and result["chebi_id"] not in molecules:
@@ -207,7 +194,7 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
                 aars = add_output["longest_aa_chain"]
             outcome["size"] = peptide_size_verifier.verify_n_plus_amino_acids(
                 mol, expected_n, expected_groups, {f"A{i}": aar for i, aar in enumerate(aars)}
-             )
+            )
         else:
             # if there are no amino acids, then there is nothing to prove
             outcome["size"] = ModelCheckerOutcome.MODEL_FOUND_INFERRED, None
@@ -226,5 +213,7 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
                             f"Expected charge: {expected_charge.name}, got: {outcome['charge'][0].name}\n"
                             f"Expected groups: {expected_groups}, got {outcome['functional_groups'][0].name}\n"
                             f"Expected {expected_n} amino acids, got {outcome['size'][0].name}")
-    with open(os.path.join(results_dir, f"verification_fol_{timestamp}.json"), 'w') as f:
-        json.dump(res, f, indent=4)
+
+        if save_results <= 0:
+            save_results = save_results_every_n
+            json_logger.save_items(f"verify_{json_logger.timestamp}", res)
