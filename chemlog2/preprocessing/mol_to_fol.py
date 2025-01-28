@@ -36,7 +36,8 @@ def mol_to_fol_atoms(mol: Chem.Mol):
         charge = atom.GetFormalCharge()
         if charge != 0:
             # get both general direction and specific charge
-            for predicate_symbol_charge in [f"charge_{'n' if charge < 0 else "p"}", f"charge{'_m' + str(-1 * charge) if charge < 0 else str(charge)}"]:
+            for predicate_symbol_charge in [f"charge_{'n' if charge < 0 else "p"}",
+                                            f"charge{'_m' + str(-1 * charge) if charge < 0 else str(charge)}"]:
                 if predicate_symbol_charge not in extensions:
                     extensions[predicate_symbol_charge] = np.zeros(universe, dtype=np.bool_)
                 extensions[predicate_symbol_charge][atom_idx] = True
@@ -118,19 +119,19 @@ def mol_to_fol_fragments(mol: Chem.Mol, fragment_predicate_definitions: dict, fr
         ),
         "fragment": np.ones(universe, dtype=np.bool_),
     }
+    fragment_model_checkers = [
+        ModelChecker(*mol_to_fol_atoms(fragment), predicate_definitions={
+            formula.left.predicate.value: (formula.left.arguments, formula.right)
+            for formula in fragment_helper_definitions.values()})
+        for fragment in fragments]
     for predicate_symbol, formula in fragment_predicate_definitions.items():
         extensions[predicate_symbol] = np.zeros(universe, dtype=np.bool_)
-        for i, fragment in enumerate(fragments):
+        for i, model_checker in enumerate(fragment_model_checkers):
             # get atom-level FOL structure for each level, model-check properties, add properties to extensions
-            fragment_universe, fragment_extensions = mol_to_fol_atoms(fragment)
-            model_checker = ModelChecker(fragment_universe, fragment_extensions,
-                                         predicate_definitions={formula.left.predicate.value: (
-                                             formula.left.arguments, formula.right)
-                                             for formula in fragment_helper_definitions.values()})
-            target_formula = formula.right
             # assumes that the predicate is unary and the variable is the Global variable
+            target_formula = formula.right
             target_formula = substitute_var_in_formula(
-                target_formula, logic.Variable("Global"), fragment_universe - 1
+                target_formula, logic.Variable("Global"), model_checker.universe - 1
             )
             extensions[predicate_symbol][i] = model_checker.find_model(
                 target_formula
@@ -153,19 +154,20 @@ def mol_to_fol_fragments(mol: Chem.Mol, fragment_predicate_definitions: dict, fr
 def mol_to_fol_building_blocks(mol: Chem.Mol, functional_groups: dict):
     universe = 0
     # identify carbon-fragments and building blocks with python-magic
-    amide_bond_bonds = [mol.GetBondBetweenAtoms(amide_bond[0], amide_bond[2]) for amide_bond in functional_groups["amide_bond"]]
+    amide_bond_bonds = [mol.GetBondBetweenAtoms(amide_bond[0], amide_bond[2]) for amide_bond in
+                        functional_groups["amide_bond"]]
     chunks = get_chunks(mol, amide_bond_bonds)
     amino_chunk_assignments = get_possible_amino_chunk_assignments(
         mol, [amino[0] for amino in functional_groups["amino_residue"]], chunks,
-        [amide_bond[0] for amide_bond in functional_groups["amide_bond"]],
         [amide_bond[2] for amide_bond in functional_groups["amide_bond"]],
+        [amide_bond[0] for amide_bond in functional_groups["amide_bond"]],
         [carboxy[0] for carboxy in functional_groups["carboxy_residue"]],
     )
     building_blocks = []
     for assignment in product(*amino_chunk_assignments):
         building_blocks += [chunk + [amino[0] for j, amino in enumerate(functional_groups["amino_residue"])
-                                    if assignment[j] == i]
-                           for i, chunk in enumerate(chunks)]
+                                     if assignment[j] == i]
+                            for i, chunk in enumerate(chunks)]
     # remove duplicates
     building_blocks = [list(t) for t in {tuple(bb) for bb in building_blocks}]
     universe = sum(len(v) for v in functional_groups.values()) + len(building_blocks) + 1
@@ -179,16 +181,14 @@ def mol_to_fol_building_blocks(mol: Chem.Mol, functional_groups: dict):
         extensions[fg] = np.array([len(second_order_elements) <= i < len(second_order_elements + fg_atoms)
                                    for i in range(universe)], dtype=np.bool_)
         second_order_elements += fg_atoms
-    second_order_elements.append([]) # global placeholder
+    second_order_elements.append([])  # global placeholder
 
     extensions["overlap"] = np.array(
-        [[any(atom in second_order_elements[i] for atom in second_order_elements[j]) for i in range(universe)] for j in range(universe)]
+        [[any(atom in second_order_elements[i] for atom in second_order_elements[j]) for i in range(universe)] for j in
+         range(universe)]
     )
 
     return universe, extensions, second_order_elements
-
-
-
 
 
 def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: dict):

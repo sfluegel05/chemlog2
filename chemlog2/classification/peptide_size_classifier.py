@@ -55,7 +55,9 @@ def get_n_amino_acid_residues(mol) -> (int, dict):
                 longest_aa_chain = aa_chain
                 longest_aa_chain_with_atoms = [
                     chunks[i] + [a for a, assign in zip(amino_group_idxs, amino_assignment) if assign == i] for i in
-                    aa_chain]
+                    # use dfs_preorder to get a traversal of the peptide where each amino acid is connected to the
+                    # previous one
+                    nx.dfs_preorder_nodes(amino_acid_graph, source=list(aa_chain)[0])]
     add_output["longest_aa_chain"] = longest_aa_chain_with_atoms
     return len(longest_aa_chain), add_output
 
@@ -95,7 +97,8 @@ def get_amide_bonds(mol):
     o_idxs = []
     single_os = [(atom.GetIdx(), o_atom.GetIdx()) for atom in mol.GetAtoms() for o_atom in atom.GetNeighbors()
                  if o_atom.GetAtomicNum() == 8
-                 and mol.GetBondBetweenAtoms(atom.GetIdx(), o_atom.GetIdx()).GetBondType() == Chem.BondType.SINGLE]
+                 and mol.GetBondBetweenAtoms(atom.GetIdx(), o_atom.GetIdx()).GetBondType() == Chem.BondType.SINGLE
+                 and (o_atom.GetTotalNumHs() == 1 or o_atom.GetFormalCharge() == -1)]
     double_os = [(atom.GetIdx(), o_atom.GetIdx()) for atom in mol.GetAtoms() for o_atom in atom.GetNeighbors()
                  if o_atom.GetAtomicNum() == 8
                  and mol.GetBondBetweenAtoms(atom.GetIdx(), o_atom.GetIdx()).GetBondType() == Chem.BondType.DOUBLE]

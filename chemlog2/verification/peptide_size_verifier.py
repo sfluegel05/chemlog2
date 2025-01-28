@@ -28,6 +28,8 @@ class PeptideSizeVerifier:
         # for functional_group_extensions, assume that they are true
         # note that this only verifies n+, not n (does not check if n+1 fails)
         universe, extensions, second_order_elements = mol_to_fol_building_blocks(mol, functional_group_extensions)
+        logging.debug(f"Using the following second-order elements: {', '.join([str(i) + ' -> ' + str(v) 
+                                                                    for i, v in enumerate(second_order_elements)])}")
         # this model checker uses amide_bond, amino_residue and carboxy_residue from the extension and
         # amino_acid_residue from the definition (if it is not already in the extension)
         model_checker = ModelChecker(
