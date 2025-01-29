@@ -98,7 +98,7 @@ def get_amide_bonds(mol):
     single_os = [(atom.GetIdx(), o_atom.GetIdx()) for atom in mol.GetAtoms() for o_atom in atom.GetNeighbors()
                  if o_atom.GetAtomicNum() == 8
                  and mol.GetBondBetweenAtoms(atom.GetIdx(), o_atom.GetIdx()).GetBondType() == Chem.BondType.SINGLE
-                 and (o_atom.GetTotalNumHs() == 1 or o_atom.GetFormalCharge() == -1)]
+                 and (o_atom.GetTotalNumHs(includeNeighbors=True) == 1 or o_atom.GetFormalCharge() == -1)]
     double_os = [(atom.GetIdx(), o_atom.GetIdx()) for atom in mol.GetAtoms() for o_atom in atom.GetNeighbors()
                  if o_atom.GetAtomicNum() == 8
                  and mol.GetBondBetweenAtoms(atom.GetIdx(), o_atom.GetIdx()).GetBondType() == Chem.BondType.DOUBLE]

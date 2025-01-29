@@ -51,7 +51,7 @@ def mol_to_fol_atoms(mol: Chem.Mol):
         # add predicates for h atoms
         # exception: if molecule only consists of a single H atom, don't assume that a second H has to be added
         if universe != 1 or atom.GetAtomicNum() != 1:
-            num_hs = atom.GetTotalNumHs()
+            num_hs = atom.GetTotalNumHs(includeNeighbors=True)
             predicate_symbol = f"has_{num_hs}_hs"
             if predicate_symbol not in extensions:
                 extensions[predicate_symbol] = np.zeros(
@@ -233,7 +233,7 @@ def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: False):
         if atom.HasProp("_CIPCode"):
             clauses.append(logic.PredicateExpression(f"cip_code_{atom.GetProp('_CIPCode')}", [variable]))
         if not allow_additional_bonds and (len(list(mol.GetAtoms())) != 1 or atom.GetAtomicNum() != 1):
-            num_hs = atom.GetTotalNumHs()
+            num_hs = atom.GetTotalNumHs(includeNeighbors=True)
             clauses.append(logic.PredicateExpression(f"has_{num_hs}_hs", [variable]))
 
     for bond in mol.GetBonds():
