@@ -9,6 +9,7 @@ from chemlog2.classification.functional_groups_verifier import FunctionalGroupsV
 from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
+from chemlog2.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
 from chemlog2.preprocessing.chebi_data import ChEBIData
 from chemlog2.timestamped_logger import TimestampedLogger
 from chemlog2.verification.charge_verifier import ChargeVerifier
@@ -40,42 +41,50 @@ def resolve_chebi_classes(classification):
     # todo: use the ontology to automatically add indirect superclasses
     n_amino_acid_residues = classification["n_amino_acid_residues"]
     charge_category = classification["charge_category"]
+    res = []
     if charge_category == ChargeCategories.SALT.name:
-        return [24866]  # salt (there is no class peptide salt)
-    if n_amino_acid_residues < 2:
-        # if not a peptide: only assign charge classes
+        res.append(24866) # salt (there is no class peptide salt)
+    elif charge_category == ChargeCategories.ANION.name:
+        res.append(25696)
+    elif charge_category == ChargeCategories.CATION.name:
+        res.append(25697)
+    elif charge_category == ChargeCategories.ZWITTERION.name:
+        res.append(27369)
+    if n_amino_acid_residues >= 2:
         if charge_category == ChargeCategories.ANION.name:
-            return [25696]
-        if charge_category == ChargeCategories.CATION.name:
-            return [25697]
-        if charge_category == ChargeCategories.ZWITTERION.name:
-            return [27369]
-        return []
-    # peptide ... classes
-    if charge_category == ChargeCategories.ANION.name:
-        # anion, peptide anion
-        return [25696, 60334]
-    if charge_category == ChargeCategories.CATION.name:
-        return [25697, 60194]
-    if charge_category == ChargeCategories.ZWITTERION.name:
-        if n_amino_acid_residues == 2:
-            # zwitterion, peptide zwitterion, dipeptide zwitterion
-            return [27369, 60466, 90799]
-        if n_amino_acid_residues == 3:
-            return [27369, 60466, 155837]
-        return [27369, 60466]
-    if n_amino_acid_residues == 2:
-        return [16670, 25676, 46761]
-    if n_amino_acid_residues == 3:
-        return [16670, 25676, 47923]
-    if n_amino_acid_residues == 4:
-        return [16670, 25676, 48030]
-    if n_amino_acid_residues == 5:
-        return [16670, 25676, 48545]
-    if n_amino_acid_residues >= 10:
-        return [16670, 15841]
-    # only oligo
-    return [16670, 25676]
+            # peptide anion
+            res.append(60334)
+        elif charge_category == ChargeCategories.CATION.name:
+            # peptide cation
+            res.append(60194)
+        elif charge_category == ChargeCategories.ZWITTERION.name:
+            res.append(60466)
+            if n_amino_acid_residues == 2:
+                # zwitterion, peptide zwitterion, dipeptide zwitterion
+                res.append(90799)
+            if n_amino_acid_residues == 3:
+                res.append(155837)
+        elif charge_category == ChargeCategories.NEUTRAL.name:
+            res.append(16670)
+            if n_amino_acid_residues == 2:
+                res.append(46761)
+            if n_amino_acid_residues == 3:
+                res.append(47923)
+            if n_amino_acid_residues == 4:
+                res.append(48030)
+            if n_amino_acid_residues == 5:
+                res.append(48545)
+            if n_amino_acid_residues >= 10:
+                res.append(15841)
+            else:
+                # oligo
+                res.append(25676)
+    if "emericellamide" in classification and classification["emericellamide"]:
+        res.append(64372)
+    if "2,5-diketopiperazines" in classification and classification["2,5-diketopiperazines"]:
+        res.append(65061)
+
+    return res
 
 
 @cli.command()
@@ -127,6 +136,11 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
             'proteinogenics': proteinogenics,
             'time': f"{time.perf_counter() - start_time:.4f}"
         })
+
+        if n_amino_acid_residues == 5:
+            results[-1]["emericellamide"] = is_emericellamide(row["mol"])
+        if n_amino_acid_residues == 2:
+            results[-1]["2,5-diketopiperazines"] = is_diketopiperazine(row["mol"])
 
         if return_chebi_classes:
             results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
