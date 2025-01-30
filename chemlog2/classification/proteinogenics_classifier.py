@@ -2,12 +2,11 @@ import logging
 
 from rdkit import Chem
 
-from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amino_groups
-from chemlog2.results import plot_mol
-
-
 def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
-    Chem.rdCIPLabeler.AssignCIPLabels(mol)
+    try:
+        Chem.rdCIPLabeler.AssignCIPLabels(mol)
+    except Exception as e:
+        logging.warning(f"Failed to assign CIP codes: {e}")
     carboxy_cs = [c for c, _, _ in carboxys]
     side_chains = identify_side_chains_smarts(mol, amino_ns, carboxy_cs)
     # identify proteinogenic amino acids

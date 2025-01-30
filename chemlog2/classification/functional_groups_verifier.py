@@ -22,6 +22,13 @@ class FunctionalGroupsVerifier:
         # take right-hand side of formulas
         self.functional_group_defs = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        with open(os.path.join("data", "fol_specifications", "functional_group_helpers.tptp"), "r") as f:
+            tptp_raw = f.readlines()
+        tptp_parser = TPTPParser()
+        tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
+        # take right-hand side of formulas
+        self.functional_group_helpers = {f[0].formula.left.predicate.value:
+                                    f[0].formula for f in tptp_parsed if len(f) > 0}
 
 
     def verify_functional_groups(self, mol: Chem.Mol, expected_groups: dict):
@@ -30,14 +37,21 @@ class FunctionalGroupsVerifier:
         universe, extensions = mol_to_fol_atoms(mol)
         model_checker = ModelChecker(
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
-                                                         for pred, formula in self.functional_group_defs.items()})
+                                                         for pred, formula in self.functional_group_helpers.items()})
         proof_attempts = []
         all_successful = True
         for group in expected_groups:
             for atoms in expected_groups[group]:
-                # only use a simple predicate expression -> the real work is in applying the predicate definitions
-                target_formula = logic.PredicateExpression(group, atoms)
-                result = model_checker.find_model(target_formula)[0]
+                target_formula = self.functional_group_defs[group]
+                if len(atoms) != len(target_formula.left.arguments):
+                    logging.warning(
+                        f"Expected {len(target_formula.left.arguments)} atoms for {group}, got {len(atoms)}")
+                    result = ModelCheckerOutcome.NO_MODEL_INFERRED
+                else:
+                    target_formula = apply_variable_assignment(target_formula.right, {var.symbol: atom for var, atom in
+                                                                                      zip(target_formula.left.arguments,
+                                                                                          atoms)})
+                    result = model_checker.find_model(target_formula)[0]
                 if result not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                     all_successful = False
                 proof_attempts.append(
@@ -45,12 +59,27 @@ class FunctionalGroupsVerifier:
         # only return positive result if **all** functional groups have been found
         return ModelCheckerOutcome.MODEL_FOUND if all_successful else ModelCheckerOutcome.NO_MODEL, proof_attempts
 
+    def classify_functional_groups(self, mol: Chem.Mol):
+        universe, extensions = mol_to_fol_atoms(mol)
+        model_checker = ModelChecker(
+            universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
+                                                         for pred, formula in self.functional_group_helpers.items()})
+        functional_groups = {}
+        for group, target_formula in self.functional_group_defs.items():
+            functional_groups[group] = []
+            for atom_combination in permutations(range(mol.GetNumAtoms()), len(target_formula.left.arguments)):
+                target_formula = apply_variable_assignment(target_formula.right, {var.symbol: atom for var, atom in
+                                                                                  zip(target_formula.left.arguments,
+                                                                                      atom_combination)})
+
+                outcome = model_checker.find_model(target_formula)
+                if outcome[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+                    functional_groups[group].append(outcome[1])
+
+        return functional_groups
+
 
 if __name__ == "__main__":
-    verifier = FunctionalGroupsVerifier()
-    print("Verifier initialized")
-    # mol = Chem.MolFromSmiles("[Al+3].[Al+3].[O-]S([O-])(=O)=O.[O-]S([O-])(=O)=O.[O-]S([O-])(=O)=O")
-    mol = Chem.MolFromSmiles("NCC([O-])=O")
-    res = verifier.verify_n_amino_acids(mol, 2,{}, {})
-    print(res)
-    print("Verification done")
+    from itertools import permutations
+
+    print(list(permutations(range(5), 3)))

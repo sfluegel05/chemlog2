@@ -45,6 +45,26 @@ class PeptideSizeVerifier:
             {"target": expected_n, "variable_assignments": variable_assignment, "outcome": result.name})
         return result, proof_attempts
 
+    def classify_n_amino_acids(self, mol: Chem.Mol, functional_groups):
+        # for functional_group_extensions, assume that they are true
+        universe, extensions, second_order_elements = mol_to_fol_building_blocks(mol, functional_groups)
+        logging.debug(f"Using the following second-order elements: "
+                      f"{', '.join([str(i) + ' -> ' + str(v) for i, v in enumerate(second_order_elements)])}")
+        # this model checker uses amide_bond, amino_residue and carboxy_residue from the extension and
+        # amino_acid_residue from the definition (if it is not already in the extension)
+        model_checker = ModelChecker(
+            universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
+                                                         for pred, formula in self.structure_formulas.items()})
+        assignment = None
+        for n in range(2, 10):
+            target_formula = build_peptide_structure_formula(n)
+            outcome = model_checker.find_model(target_formula)
+            if outcome[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
+                return n - 1, assignment
+            elif outcome[0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+                return outcome, None
+            assignment = outcome[1]
+
 
 def build_peptide_structure_formula(n):
     variables = [logic.Variable(f"A{i}") for i in range(n)] + [logic.Variable(f"B{i}") for i in range(n-1)]

@@ -12,7 +12,6 @@ from chemlog2.classification.peptide_size_classifier import get_carboxy_derivati
 from chemlog2.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
 from chemlog2.preprocessing.chebi_data import ChEBIData
 from chemlog2.timestamped_logger import TimestampedLogger
-from chemlog2.verification.charge_verifier import ChargeVerifier
 import logging
 import os
 import ast
@@ -22,6 +21,7 @@ from chemlog2.verification.charge_verifier import ChargeVerifier
 from chemlog2.verification.model_checking import ModelCheckerOutcome
 from chemlog2.verification.peptide_size_verifier import PeptideSizeVerifier
 from chemlog2.verification.proteinogenics_verifier import ProteinogenicsVerifier
+from chemlog2.verification.substruct_verifier import SubstructVerifier
 
 
 class LiteralOption(click.Option):
@@ -138,9 +138,15 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
         })
 
         if n_amino_acid_residues == 5:
-            results[-1]["emericellamide"] = is_emericellamide(row["mol"])
+            emericellamide = is_emericellamide(row["mol"])
+            results[-1]["emericellamide"] = emericellamide[0]
+            if additional_output and emericellamide[0]:
+                results[-1]["emericellamide_atoms"] = emericellamide[1]
         if n_amino_acid_residues == 2:
-            results[-1]["2,5-diketopiperazines"] = is_diketopiperazine(row["mol"])
+            diketopiperazine = is_diketopiperazine(row["mol"])
+            results[-1]["2,5-diketopiperazines"] = diketopiperazine[0]
+            if additional_output and diketopiperazine[0]:
+                results[-1]["2,5-diketopiperazines_atoms"] = diketopiperazine[1]
 
         if return_chebi_classes:
             results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
@@ -153,13 +159,102 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 
 @cli.command()
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
+@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
+              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
+@click.option('--return-chebi-classes', '-c', is_flag=True, help='Return ChEBI classes')
+@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
+@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
+@click.option('--additional-output', '-o', is_flag=True, help='Returns intermediate steps in output, '
+                                                              'useful for explainability and verification')
+def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output):
+    json_logger = TimestampedLogger(None, run_name, debug_mode)
+    json_logger.start_run("classify_fol", {"chebi_version": chebi_version, "molecules": molecules,
+                                       "return_chebi_classes": return_chebi_classes, "run_name": run_name,
+                                       "debug_mode": debug_mode})
+    data = ChEBIData(chebi_version).processed
+    if len(molecules) > 0:
+        data_filtered = data.loc[data.index.isin(molecules)]
+    else:
+        data_filtered = data
+
+    # start with shortest SMILES
+    data_filtered["smiles_length"] = [
+        len(str(row["smiles"]) if row["smiles"] is not None else "")
+        for _, row in data_filtered.iterrows()
+    ]
+    data_filtered.sort_values("smiles_length", inplace=True, ascending=True)
+
+    charge_verifier = ChargeVerifier()
+    functional_groups_verifier = FunctionalGroupsVerifier()
+    peptide_size_verifier = PeptideSizeVerifier()
+    proteinogenics_verifier = ProteinogenicsVerifier()
+    substruct_verifier = SubstructVerifier()
+
+    results = []
+    logging.info(f"Classifying {len(data_filtered)} molecules")
+    for id, row in tqdm.tqdm(data_filtered.iterrows()):
+        logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
+        start_time = time.perf_counter()
+        add_output = {}
+        charge_category, charge_assignments = charge_verifier.classify_charge(row["mol"])
+        if charge_assignments is not None:
+            add_output["charge_assignments"] = charge_assignments
+        logging.debug(f"Charge category is {charge_category}")
+        functional_groups = functional_groups_verifier.classify_functional_groups(row["mol"])
+        n_amino_acid_residues, add_output_size = peptide_size_verifier.classify_n_amino_acids(row["mol"], functional_groups)
+        add_output = {**add_output, **add_output_size}
+        logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
+        if n_amino_acid_residues > 0:
+            atom_level_functional_groups = {
+                "amino_residue_n": [amino[0] for amino in functional_groups["amino_residue"]],
+                "carboxy_residue_c": [carboxy[0] for carboxy in functional_groups["carboxy_residue"]]}
+
+            proteinogenics, proteinogenics_locations = proteinogenics_verifier.classify_proteinogenics(
+                row["mol"], atom_level_functional_groups)
+        else:
+            proteinogenics, proteinogenics_locations = [], []
+        add_output["proteinogenics_locations"] = proteinogenics_locations
+
+        results.append({
+            'chebi_id': id,
+            'charge_category': charge_category.name,
+            'n_amino_acid_residues': n_amino_acid_residues,
+            'proteinogenics': proteinogenics,
+        })
+
+        if n_amino_acid_residues == 5:
+            emericellamide = substruct_verifier.classify_substruct_class(row["mol"], "emericellamide")
+            results[-1]["emericellamide"] = emericellamide[0]
+            if emericellamide[0]:
+                add_output["emericellamide_atoms"] = emericellamide[1]
+        if n_amino_acid_residues == 2:
+            diketopiperazine = is_diketopiperazine(row["mol"])
+            results[-1]["2,5-diketopiperazines"] = diketopiperazine[0]
+            if diketopiperazine[0]:
+                add_output["2,5-diketopiperazines_atoms"] = diketopiperazine[1]
+
+        results[-1]["time"] = f"{time.perf_counter() - start_time:.4f}"
+
+
+
+        if return_chebi_classes:
+            results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
+        if additional_output:
+            results[-1] = {**results[-1], **add_output}
+
+    json_logger.save_items("classify", results)
+
+
+@cli.command()
+@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
 @click.option('--results-dir', '-r', type=str, required=True, help='Directory where results.json to analyse is located')
 @click.option('--debug-mode', '-d', is_flag=True, help='Returns additional states')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
               help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
-def verify(chebi_version, results_dir, debug_mode, molecules):
+@click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
+def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
     json_logger = TimestampedLogger(results_dir, debug_mode=debug_mode)
-    json_logger.start_run("verify",
+    json_logger.start_run("verify" + ("_3star" if only_3star else ""),
                           {"chebi_version": chebi_version, "results_dir": results_dir, "debug_mode": debug_mode,
                            "molecules": molecules})
     data = ChEBIData(chebi_version)
@@ -169,45 +264,47 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
     functional_groups_verifier = FunctionalGroupsVerifier()
     peptide_size_verifier = PeptideSizeVerifier()
     proteinogenics_verifier = ProteinogenicsVerifier()
+    substruct_verifier = SubstructVerifier()
     res = []
-    save_results_every_n = 10000
 
-    for i, result in tqdm.tqdm(enumerate(results)):
-        if len(molecules) > 0 and result["chebi_id"] not in molecules:
-            continue
-        outcome = {}
+    results = [r for r in results if (len(molecules) == 0 or r["chebi_id"] in molecules) and (not only_3star or data.processed.loc[r["chebi_id"], "subset"] == "3_STAR")]
+
+    save_results_at = len(results) / 4
+
+    for i, result in tqdm.tqdm(enumerate(results), total=len(results), desc="Verifying"):
+        outcome, expected = {}, {}
         start_time = time.perf_counter()
-        expected_charge = ChargeCategories[result["charge_category"]]
+        expected["charge"] = ChargeCategories[result["charge_category"]].name
         mol = data.processed.loc[result["chebi_id"], "mol"]
-        outcome["charge"] = charge_verifier.verify_charge_category(mol, expected_charge, {})
+        outcome["charge"] = charge_verifier.verify_charge_category(mol, ChargeCategories[result["charge_category"]], {})
         # functional groups
-        expected_groups = {}
+        expected["functional_groups"] = {}
         if "amide_bond" in result:
-            expected_groups["amide_bond"] = result["amide_bond"]
+            expected["functional_groups"]["amide_bond"] = result["amide_bond"]
         else:
             _, amide_c, amide_o, amide_n = get_amide_bonds(mol)
-            expected_groups["amide_bond"] = [(c, o, n) for c, o, n in zip(amide_c, amide_o, amide_n)]
+            expected["functional_groups"]["amide_bond"] = [(c, o, n) for c, o, n in zip(amide_c, amide_o, amide_n)]
         if "amino_residue" in result:
-            expected_groups["amino_residue"] = result["amino_residue"]
+            expected["functional_groups"]["amino_residue"] = [(n,) for n in result["amino_residue"]]
         else:
-            expected_groups["amino_residue"] = [(n,) for n in
-                                                get_amino_groups(mol, [c for c, _, _ in expected_groups["amide_bond"]])]
+            expected["functional_groups"]["amino_residue"] = [(n,) for n in
+                                                get_amino_groups(mol, [c for c, _, _ in expected["functional_groups"]["amide_bond"]])]
         if "carboxy_residue" in result:
-            expected_groups["carboxy_residue"] = result["carboxy_residue"]
+            expected["functional_groups"]["carboxy_residue"] = result["carboxy_residue"]
         else:
-            expected_groups["carboxy_residue"] = list(get_carboxy_derivatives(mol))
-        outcome["functional_groups"] = functional_groups_verifier.verify_functional_groups(mol, expected_groups)
+            expected["functional_groups"]["carboxy_residue"] = list(get_carboxy_derivatives(mol))
+        outcome["functional_groups"] = functional_groups_verifier.verify_functional_groups(mol, expected["functional_groups"])
 
         # n amino acids
-        expected_n = result["n_amino_acid_residues"]
-        if expected_n > 1:
+        expected["n_amino_acid_residues"] = result["n_amino_acid_residues"]
+        if expected["n_amino_acid_residues"] > 1:
             if "longest_aa_chain" in result:
                 aars = result["longest_aa_chain"]
             else:
                 add_output = get_n_amino_acid_residues(mol)[1]
                 aars = add_output["longest_aa_chain"]
             outcome["size"] = peptide_size_verifier.verify_n_plus_amino_acids(
-                mol, expected_n, expected_groups, {f"A{i}": aar for i, aar in enumerate(aars)}
+                mol, expected["n_amino_acid_residues"], expected["functional_groups"], {f"A{i}": aar for i, aar in enumerate(aars)}
             )
         else:
             # if there are no amino acids, then there is nothing to prove
@@ -215,26 +312,41 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
 
         # proteinogenics
         if "proteinogenics_locations_no_carboxy" in result:
-            expected_proteinogenics = [(code, atoms) for code, atoms in zip(result["proteinogenics"],
+            expected["proteinogenics"] = [(code, atoms) for code, atoms in zip(result["proteinogenics"],
                                                                             result["proteinogenics_locations_no_carboxy"])]
         else:
             proteinogenics, _, proteinogenics_locations_no_carboxy = get_proteinogenic_amino_acids(
-                mol, [amino[0] for amino in expected_groups["amino_residue"]], expected_groups["carboxy_residue"]
+                mol, [amino[0] for amino in expected["functional_groups"]["amino_residue"]], expected["functional_groups"]["carboxy_residue"]
             )
-            expected_proteinogenics = [(code, atoms) for code, atoms in zip(proteinogenics, proteinogenics_locations_no_carboxy)]
-        if len(expected_proteinogenics) > 0:
+            expected["proteinogenics"] = [(code, atoms) for code, atoms in zip(proteinogenics, proteinogenics_locations_no_carboxy)]
+        if len(expected["proteinogenics"]) > 0:
             # only take first atoms of functional groups
-            atom_level_functional_groups = {"amino_residue_n": [amino[0] for amino in expected_groups["amino_residue"]],
-                                            "carboxy_residue_c": [carboxy[0] for carboxy in expected_groups["carboxy_residue"]]}
+            atom_level_functional_groups = {"amino_residue_n": [amino[0] for amino in expected["functional_groups"]["amino_residue"]],
+                                            "carboxy_residue_c": [carboxy[0] for carboxy in expected["functional_groups"]["carboxy_residue"]]}
             outcome["proteinogenics"] = proteinogenics_verifier.verify_proteinogenics(mol, atom_level_functional_groups,
-                                                                                      expected_proteinogenics)
+                                                                                      expected["proteinogenics"])
         else:
             outcome["proteinogenics"] = ModelCheckerOutcome.MODEL_FOUND_INFERRED, None
 
+        # substructures
+        if "emericellamide" in result and result["emericellamide"]:
+            if "emericellamide_atoms" in result:
+                atoms = result["emericellamide_atoms"]
+            else:
+                atoms = is_emericellamide(mol)[1]
+            expected["emericellamide"] = True
+            outcome["emericellamide"] = substruct_verifier.verify_substruct_class(mol, "emericellamide", atoms)
+        if "2,5-diketopiperazines" in result and result["2,5-diketopiperazines"]:
+            if "2,5-diketopiperazines_atoms" in result:
+                atoms = result["2,5-diketopiperazines_atoms"]
+            else:
+                atoms = is_diketopiperazine(mol)
+            expected["2,5-diketopiperazines"] = True
+            outcome["2,5-diketopiperazines"] = substruct_verifier.verify_substruct_class(mol, "diketopiperazines", atoms)
 
         res.append({
             "chebi_id": result["chebi_id"],
-            "expected_charge": expected_charge.name,
+            "expected": expected,
             "outcome": {key: o[0].name for key, o in outcome.items()},
             "time": f"{time.perf_counter() - start_time:.4f}"
         })
@@ -245,18 +357,20 @@ def verify(chebi_version, results_dir, debug_mode, molecules):
                outcome.values()):
             warning_str = ""
             if outcome["charge"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected charge: {expected_charge.name}, got: {outcome['charge'][0].name}, tried: {outcome['charge'][1]}\n"
+                warning_str += f"Expected charge: {expected["charge"]}, got: {outcome['charge'][0].name}, tried: {outcome['charge'][1]}\n"
             if outcome["functional_groups"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected groups: {expected_groups}, got {outcome['functional_groups'][0].name}, tried: {outcome['functional_groups'][1]}\n"
+                warning_str += f"Expected groups: {expected["functional_groups"]}, got {outcome['functional_groups'][0].name}, tried: {outcome['functional_groups'][1]}\n"
             if outcome["size"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected {expected_n} amino acids, got {outcome['size'][0].name}\n"
+                warning_str += f"Expected {expected["n_amino_acid_residues"]} amino acids, got {outcome['size'][0].name}\n"
             if outcome["proteinogenics"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected proteinogenics: {expected_proteinogenics}, got {outcome['proteinogenics'][0].name}, tried {outcome['proteinogenics'][1]}\n"
+                warning_str += f"Expected proteinogenics: {expected["proteinogenics"]}, got {outcome['proteinogenics'][0].name}, tried {outcome['proteinogenics'][1]}\n"
+            if "emericellamide" in expected and outcome["emericellamide"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+                warning_str += f"Expected emericellamide, got {outcome['emericellamide'][0].name}\n"
+            if "2,5-diketopiperazines" in expected and outcome["2,5-diketopiperazines"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+                warning_str += f"Expected 2,5-diketopiperazines, got {outcome['2,5-diketopiperazines'][0].name}\n"
             logging.warning(f"Verification failed for CHEBI:{result['chebi_id']} \n{warning_str}")
 
-        if (i % save_results_every_n) == 0:
-            if save_results_every_n > 1000:
-                save_results_every_n = int(save_results_every_n * 0.95)
-            logging.warning(f"saving at step {i} (step size: {save_results_every_n})")
+        if i >= save_results_at:
+            save_results_at = i + (len(results) - i) // 4 + 10
             json_logger.save_items(f"verify_{json_logger.timestamp}", res)
     json_logger.save_items(f"verify_{json_logger.timestamp}", res)

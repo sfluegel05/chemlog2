@@ -77,6 +77,22 @@ class ChargeVerifier:
 
         return ModelCheckerOutcome.UNKNOWN, []
 
+    def classify_charge(self, mol: Chem.Mol):
+        universe, extensions = mol_to_fol_fragments(mol, self.fragment_property_formulas, self.fragment_helper_formulas)
+        model_checker_frags = ModelChecker(
+            universe, extensions, predicate_definitions={formula.left.predicate.value
+                                                         if isinstance(formula.left, logic.PredicateExpression)
+                                                         else formula.left.symbol.value:
+                                                             (formula.left.arguments, formula.right) if isinstance(
+                                                                 formula.left, logic.PredicateExpression) else (
+                                                             [], formula.right)
+                                                         for formula in self.charge_formulas.values()})
+
+        for category, target_formula in self.charge_formulas.items():
+            outcome = model_checker_frags.find_model(target_formula.right)
+            if outcome[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+                return category, outcome[1]
+        return ChargeCategories.NEUTRAL, None
 
 if __name__ == "__main__":
     verifier = ChargeVerifier()
