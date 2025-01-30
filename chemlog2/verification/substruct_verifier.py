@@ -1,4 +1,6 @@
 import logging
+
+from gavel.logic import logic, logic_utils
 from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
 import os
@@ -44,10 +46,13 @@ class SubstructVerifier:
             universe, extensions
         )
         target_formula = self.substruct_defs[target_cls]
+        target_formula = logic.QuantifiedFormula(logic.Quantifier.EXISTENTIAL,
+                                                 logic_utils.get_vars_in_formula(target_formula.right),
+                                                 target_formula.right)
         try:
                 result = model_checker.find_model(target_formula)
         except Exception as e:
-                logging.error(f"Error while classify {target_cls}: {e}")
+                logging.error(f"Error while classifying {target_cls}: {e}")
                 result = ModelCheckerOutcome.ERROR, []
 
         return result[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED], result

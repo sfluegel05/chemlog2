@@ -3,5 +3,5 @@
 
 % cnf conversion of original formula
 fof(amide, axiom, amide_bond(Ac, Ao, An) <=> (c(Ac) & o(Ao) & n(An) & (bSINGLE(Ac, Ao) | bDOUBLE(Ac, Ao)) & (bSINGLE(Ac, Ao) | bSINGLE(Ac, An)) & (bDOUBLE(Ac, An) | bDOUBLE(Ac, Ao)) & (bDOUBLE(Ac, An) | bSINGLE(Ac, An)) & (has_1_hs(Ao) | charge_m1(Ao) | bDOUBLE(Ac, Ao)) & (has_1_hs(Ao) | charge_m1(Ao) | bSINGLE(Ac, An)) )).
-fof(amino, axiom, amino_residue(An) <=> ?[Ao]: (n(An) & ~has_amino_nonconforming_neighbor(An, Ao))).
-fof(carboxy, axiom, carboxy_residue(Ac, Ad, As) <=> (c(Ac) & o(Ad) & bDOUBLE(Ac, Ad) & bSINGLE(Ac, As) )).
+fof(amino, axiom, amino_residue(An) <=> (n(An) & ~has_amino_nonconforming_neighbor(An))).
+fof(carboxy, axiom, carboxy_residue(Ac, Ad, As) <=> (c(Ac) & o(Ad) & ~c(As) & ~h(As) & bDOUBLE(Ac, Ad) & bSINGLE(Ac, As) )).

@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+from gavel.logic import logic, logic_utils
 
 from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
@@ -13,7 +14,7 @@ from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutco
 class ProteinogenicsVerifier:
 
     def __init__(self):
-        with open(os.path.join("data", "fol_specifications", "proteinogenics.tptp"), "r") as f:
+        with open(os.path.join("data", "fol_specifications", "proteinogenics_no_helpers.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parser = TPTPParser()
         tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
@@ -69,12 +70,19 @@ class ProteinogenicsVerifier:
         proven_amino_acids = []
         variable_assignments = []
         for amino_acid_predicate, target_formula in self.proteinogenics_defs.items():
+            target_formula = logic.QuantifiedFormula(logic.Quantifier.EXISTENTIAL,
+                                                     target_formula.left.arguments,
+                                                     target_formula.right)
             try:
                 outcome = model_checker.find_model(target_formula)
             except Exception as e:
                 logging.error(f"Error while classifying {amino_acid_predicate}: {e}")
                 outcome = ModelCheckerOutcome.ERROR, []
-            if outcome in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+            if outcome[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                 proven_amino_acids.append(amino_acid_predicate[3:])
-                variable_assignments.append(outcome[1])
+                variable_assignments.append([ind for _, ind in outcome[1]])
+                logging.info(f"{amino_acid_predicate} has been found")
+            else:
+                logging.info(f"{amino_acid_predicate} has not been found: {outcome}")
+
         return proven_amino_acids, variable_assignments

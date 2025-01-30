@@ -323,10 +323,67 @@ class ModelChecker(AbstractModelChecker):
                 for clause in clauses
                 if len(get_vars_in_formula(clause)) == 1
             ]
-            # specialised for CNF clauses (and replacing any variable), more general case is covered by substitute_var_in_formula
-            clauses_ind = [
-                [
-                    NaryFormula(
+
+            logging.debug(
+                f"Using clauses with one variable: "
+                f"{', '.join([str(pred) for pred, _ in clauses_one_var])}"
+            )
+            clauses_one_var_by_var = {}
+            for clause_idx, (clause, var) in enumerate(clauses_one_var):
+                var = str(var.pop())
+                if var not in clauses_one_var_by_var:
+                    clauses_one_var_by_var[var] = []
+                clauses_one_var_by_var[var].append([replace_vars_in_clause(clause, const) for const in range(self.universe)])
+            for var, clauses_var in clauses_one_var_by_var.items():
+                for clauses_v in clauses_var:
+                    possible_substitutes_for_clause = [
+                        self.get_possible_substitutes(
+                            [
+                                clauses_v[sub].formulae[i]
+                                for sub in possible_substitutes[var]
+                            ],
+                            possible_substitutes[str(var)],
+                        )
+                        for i in range(len(clauses_v[0].formulae))
+                    ]
+                    possible_substitutes[var] = list(
+                        set.union(*possible_substitutes_for_clause)
+                    )
+            logging.debug(
+                f"Found possible assignments based on clauses with one variable: \n\t"
+                + "\n\t".join(
+                    [
+                        f'{key}: {", ".join([str(elem) for elem in value])}'
+                        for key, value in possible_substitutes.items()
+                    ]
+                )
+            )
+
+            variables = sorted(
+                variables, key=lambda var: len(possible_substitutes[str(var)])
+            )
+
+            for ind in possible_substitutes[str(variables[0])]:
+                new_vars = variables[1:]
+                new_clauses = [
+                    substitute_var_in_formula(clause, variables[0], ind)
+                    for clause in clauses
+                ]
+                new_allocations = [(a[0], a[1]) for a in allocations]
+                new_allocations.append((str(variables[0]), ind))
+
+                q.put((new_clauses, new_vars, new_allocations))
+            if len(possible_substitutes[str(variables[0])]) > 0:
+                logging.debug(
+                    f"Putting {variables[0]} |-> "
+                    f"{', '.join(str(ind) for ind in possible_substitutes[str(variables[0])])} in queue"
+                )
+
+        self.disproven_formulae.append(formula)
+        return ModelCheckerOutcome.NO_MODEL, None
+
+def replace_vars_in_clause(clause, const):
+    return NaryFormula(
                         logic.BinaryConnective.DISJUNCTION,
                         [
                             (
@@ -373,61 +430,6 @@ class ModelChecker(AbstractModelChecker):
                                     )
                                 )
                             )
-                            for literal in clause[0].formulae
+                            for literal in clause.formulae
                         ],
                     )
-                    for clause in clauses_one_var
-                ]
-                for const in range(self.universe)
-            ]
-            logging.debug(
-                f"Using clauses with one variable: "
-                f"{', '.join([str(pred) for pred, _ in clauses_one_var])}"
-            )
-            for clause_idx, (clause, var) in enumerate(clauses_one_var):
-                var = var.pop()
-                possible_substitutes_for_clause = [
-                    self.get_possible_substitutes(
-                        [
-                            clauses_ind[sub][clause_idx].formulae[i]
-                            for sub in possible_substitutes[str(var)]
-                        ],
-                        possible_substitutes[str(var)],
-                    )
-                    for i in range(len(clause.formulae))
-                ]
-                possible_substitutes[str(var)] = list(
-                    set.union(*possible_substitutes_for_clause)
-                )
-            logging.debug(
-                f"Found possible assignments based on clauses with one variable: \n\t"
-                + "\n\t".join(
-                    [
-                        f'{key}: {", ".join([str(elem) for elem in value])}'
-                        for key, value in possible_substitutes.items()
-                    ]
-                )
-            )
-
-            variables = sorted(
-                variables, key=lambda var: len(possible_substitutes[str(var)])
-            )
-
-            for ind in possible_substitutes[str(variables[0])]:
-                new_vars = variables[1:]
-                new_clauses = [
-                    substitute_var_in_formula(clause, variables[0], ind)
-                    for clause in clauses
-                ]
-                new_allocations = [(a[0], a[1]) for a in allocations]
-                new_allocations.append((str(variables[0]), ind))
-
-                q.put((new_clauses, new_vars, new_allocations))
-            if len(possible_substitutes[str(variables[0])]) > 0:
-                logging.debug(
-                    f"Putting {variables[0]} |-> "
-                    f"{', '.join(str(ind) for ind in possible_substitutes[str(variables[0])])} in queue"
-                )
-
-        self.disproven_formulae.append(formula)
-        return ModelCheckerOutcome.NO_MODEL, None

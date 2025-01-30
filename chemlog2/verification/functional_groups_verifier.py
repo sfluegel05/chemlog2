@@ -5,8 +5,9 @@ import numpy as np
 from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic.logic_utils import get_vars_in_formula, substitute_var_in_formula
-from gavel.logic import logic
+from gavel.logic import logic, logic_utils
 import os
+from itertools import permutations
 
 from chemlog2.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
@@ -67,14 +68,32 @@ class FunctionalGroupsVerifier:
         functional_groups = {}
         for group, target_formula in self.functional_group_defs.items():
             functional_groups[group] = []
-            for atom_combination in permutations(range(mol.GetNumAtoms()), len(target_formula.left.arguments)):
-                target_formula = apply_variable_assignment(target_formula.right, {var.symbol: atom for var, atom in
-                                                                                  zip(target_formula.left.arguments,
-                                                                                      atom_combination)})
+            # try finding a functional group for each atom (some atoms can be part of multiple functional groups of
+            # the same type -> select carefully)
+            for atom in range(mol.GetNumAtoms()):
+                if group == "amide_bond":
+                    var_assignment = {"Ao": atom}
+                elif group == "carboxy_residue":
+                    var_assignment = {"Ac": atom}
+                elif group == "amino_residue":
+                    var_assignment = {"An": atom}
+                else:
+                    logging.warning(f"Skipping unknown functional group {group}")
+                    continue
+                target_formula_assigned = apply_variable_assignment(target_formula.right, var_assignment)
+                if isinstance(target_formula_assigned, logic.QuantifiedFormula):
+                    target_formula_assigned.variables = logic_utils.get_vars_in_formula(target_formula_assigned)
+                else:
+                    target_formula_assigned = logic.QuantifiedFormula(logic.Quantifier.EXISTENTIAL,
+                                                                  logic_utils.get_vars_in_formula(target_formula_assigned),
+                                                                  target_formula_assigned)
 
-                outcome = model_checker.find_model(target_formula)
+                outcome = model_checker.find_model(target_formula_assigned)
                 if outcome[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                    functional_groups[group].append(outcome[1])
+                    assigned_dict = {assigned[0]: assigned[1] for assigned in outcome[1]}
+                    assigned_dict = {**assigned_dict, **var_assignment}
+                    group_atoms = [assigned_dict[v.symbol] for v in target_formula.left.arguments]
+                    functional_groups[group].append(group_atoms)
 
         return functional_groups
 

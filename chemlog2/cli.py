@@ -5,7 +5,7 @@ import click
 import tqdm
 
 from chemlog2.classification.charge_classifier import get_charge_category, ChargeCategories
-from chemlog2.classification.functional_groups_verifier import FunctionalGroupsVerifier
+from chemlog2.verification.functional_groups_verifier import FunctionalGroupsVerifier
 from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
@@ -15,7 +15,6 @@ from chemlog2.timestamped_logger import TimestampedLogger
 import logging
 import os
 import ast
-import sys
 
 from chemlog2.verification.charge_verifier import ChargeVerifier
 from chemlog2.verification.model_checking import ModelCheckerOutcome
@@ -201,8 +200,8 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
             add_output["charge_assignments"] = charge_assignments
         logging.debug(f"Charge category is {charge_category}")
         functional_groups = functional_groups_verifier.classify_functional_groups(row["mol"])
-        n_amino_acid_residues, add_output_size = peptide_size_verifier.classify_n_amino_acids(row["mol"], functional_groups)
-        add_output = {**add_output, **add_output_size}
+        n_amino_acid_residues, size_assignments = peptide_size_verifier.classify_n_amino_acids(row["mol"], functional_groups)
+        add_output["n_amino_acid_residues_atoms"] = size_assignments
         logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
         if n_amino_acid_residues > 0:
             atom_level_functional_groups = {
@@ -219,6 +218,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
             'chebi_id': id,
             'charge_category': charge_category.name,
             'n_amino_acid_residues': n_amino_acid_residues,
+            'functional_groups': functional_groups,
             'proteinogenics': proteinogenics,
         })
 
@@ -242,7 +242,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
         if additional_output:
             results[-1] = {**results[-1], **add_output}
 
-    json_logger.save_items("classify", results)
+    json_logger.save_items("classify_fol", results)
 
 
 @cli.command()
@@ -250,7 +250,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
 @click.option('--results-dir', '-r', type=str, required=True, help='Directory where results.json to analyse is located')
 @click.option('--debug-mode', '-d', is_flag=True, help='Returns additional states')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
-              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
+              help='List of ChEBI IDs to verify. Default: all ChEBI classes.')
 @click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
 def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
     json_logger = TimestampedLogger(results_dir, debug_mode=debug_mode)

@@ -89,7 +89,9 @@ class ChargeVerifier:
                                                          for formula in self.charge_formulas.values()})
 
         for category, target_formula in self.charge_formulas.items():
-            outcome = model_checker_frags.find_model(target_formula.right)
+            variable_assignment= {"Global": universe - 1}
+            target_formula = apply_variable_assignment(target_formula.right, variable_assignment)
+            outcome = model_checker_frags.find_model(target_formula)
             if outcome[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                 return category, outcome[1]
         return ChargeCategories.NEUTRAL, None
