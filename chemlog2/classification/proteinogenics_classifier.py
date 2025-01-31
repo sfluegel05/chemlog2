@@ -25,9 +25,11 @@ def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
                         aa_sorted = [n, alpha_c.GetIdx(), carboxy_c.GetIdx()]
                         aa += [neighbor.GetIdx() for neighbor in carboxy_c.GetNeighbors()
                                if neighbor.GetIdx() not in aa and neighbor.GetIdx() not in amino_ns]
+                        logging.debug(f"Identified alpha amino acid backbone at {aa}")
                         side_chain_start = [neighbor for neighbor in alpha_c.GetNeighbors()
                                             if neighbor.GetIdx() not in aa and neighbor.GetAtomicNum() == 6]
                         if len(side_chain_start) == 0 and alpha_c.GetTotalNumHs(includeNeighbors=True) == 2:
+                            logging.debug(f"No side chain -> glycine")
                             results.append("G")
                             results_atoms.append(aa)
                             results_atoms_sorted.append(aa_sorted)

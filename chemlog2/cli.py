@@ -95,7 +95,8 @@ def resolve_chebi_classes(classification):
 @click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
 @click.option('--additional-output', '-o', is_flag=True, help='Returns intermediate steps in output, '
                                                               'useful for explainability and verification')
-def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output):
+@click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
+def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output, only_3star):
     json_logger = TimestampedLogger(None, run_name, debug_mode)
     json_logger.start_run("classify", {"chebi_version": chebi_version, "molecules": molecules,
                                        "return_chebi_classes": return_chebi_classes, "run_name": run_name,
@@ -105,6 +106,8 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
         data_filtered = data.loc[data.index.isin(molecules)]
     else:
         data_filtered = data
+    if only_3star:
+        data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
 
     # start with shortest SMILES
     data_filtered["smiles_length"] = [
@@ -122,7 +125,7 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
         logging.debug(f"Charge category is {charge_category}")
         n_amino_acid_residues, add_output = get_n_amino_acid_residues(row["mol"])
         logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
-        if n_amino_acid_residues > 0:
+        if n_amino_acid_residues > 1:
             proteinogenics, proteinogenics_locations, proteinogenics_locations_no_carboxy = get_proteinogenic_amino_acids(row["mol"],
                                                                                      add_output["amino_residue"],
                                                                                      add_output["carboxy_residue"])
@@ -165,7 +168,8 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 @click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
 @click.option('--additional-output', '-o', is_flag=True, help='Returns intermediate steps in output, '
                                                               'useful for explainability and verification')
-def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output):
+@click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
+def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output, only_3star):
     json_logger = TimestampedLogger(None, run_name, debug_mode)
     json_logger.start_run("classify_fol", {"chebi_version": chebi_version, "molecules": molecules,
                                        "return_chebi_classes": return_chebi_classes, "run_name": run_name,
@@ -175,6 +179,8 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
         data_filtered = data.loc[data.index.isin(molecules)]
     else:
         data_filtered = data
+    if only_3star:
+        data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
 
     # start with shortest SMILES
     data_filtered["smiles_length"] = [
@@ -191,6 +197,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
 
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
+    i = 0
     for id, row in tqdm.tqdm(data_filtered.iterrows()):
         logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
         start_time = time.perf_counter()
@@ -203,7 +210,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
         n_amino_acid_residues, size_assignments = peptide_size_verifier.classify_n_amino_acids(row["mol"], functional_groups)
         add_output["n_amino_acid_residues_atoms"] = size_assignments
         logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
-        if n_amino_acid_residues > 0:
+        if n_amino_acid_residues > 1:
             atom_level_functional_groups = {
                 "amino_residue_n": [amino[0] for amino in functional_groups["amino_residue"]],
                 "carboxy_residue_c": [carboxy[0] for carboxy in functional_groups["carboxy_residue"]]}
@@ -241,6 +248,10 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
             results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
         if additional_output:
             results[-1] = {**results[-1], **add_output}
+
+        i += 1
+        if (i % 2000) == 0:
+            json_logger.save_items("classify_fol", results)
 
     json_logger.save_items("classify_fol", results)
 
@@ -374,3 +385,6 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
             save_results_at = i + (len(results) - i) // 4 + 10
             json_logger.save_items(f"verify_{json_logger.timestamp}", res)
     json_logger.save_items(f"verify_{json_logger.timestamp}", res)
+
+if __name__ == '__main__':
+    classify_fol(239, [], True, "", False, True)

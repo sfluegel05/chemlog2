@@ -7,6 +7,7 @@ from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
 import os
 
+from chemlog2.preprocessing.chebi_data import ChEBIData
 from chemlog2.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
 
@@ -14,7 +15,7 @@ from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutco
 class ProteinogenicsVerifier:
 
     def __init__(self):
-        with open(os.path.join("data", "fol_specifications", "proteinogenics_no_helpers.tptp"), "r") as f:
+        with open(os.path.join("data", "fol_specifications", "proteinogenics.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parser = TPTPParser()
         tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
@@ -33,9 +34,11 @@ class ProteinogenicsVerifier:
             if fg_name not in extensions:
                 extensions[fg_name] = np.zeros(universe, dtype=bool)
             extensions[fg_name][fg_atom] = True
+        # all_different adds pairwise inequality constraints for all quantified variables
         return ModelChecker(
-            universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
-                                                         for pred, formula in self.helpers.items()}
+            universe, extensions, all_different=True,
+            predicate_definitions={pred: (formula.left.arguments, formula.right)
+                                   for pred, formula in self.helpers.items()}
         )
 
     def verify_proteinogenics(self, mol: Chem.Mol, functional_groups, expected_proteinogenics: list):
@@ -86,3 +89,21 @@ class ProteinogenicsVerifier:
                 logging.info(f"{amino_acid_predicate} has not been found: {outcome}")
 
         return proven_amino_acids, variable_assignments
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(
+
+        format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging.DEBUG,
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    verifier = ProteinogenicsVerifier()
+    data = ChEBIData(239)
+    mol = data.processed.loc[73845, "mol"]
+    from chemlog2.results import plot_mol
+    plot_mol(mol)
+    fg = {"amino_residue_n": [4,9], "carboxy_residue_c": [0, 6, 10]}
+    print(verifier.classify_proteinogenics(mol,fg))

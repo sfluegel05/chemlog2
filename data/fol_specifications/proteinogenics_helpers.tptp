@@ -4,4 +4,6 @@ fof(has_second_bond, axiom, has_second_bond(Atom, Neighbor1) <=> ?[X]: (has_bond
 fof(has_third_bond, axiom, has_third_bond(Atom, Neighbor1, Neighbor2) <=> ?[X]: (has_bond_to(X, Atom) & X != Neighbor1 & X != Neighbor2)).
 fof(has_forth_bond, axiom, has_forth_bond(Atom, Neighbor1, Neighbor2, Neighbor3) <=> ?[X]: (has_bond_to(X, Atom) & X != Neighbor1 & X != Neighbor2 & X != Neighbor3)).
 fof(is_alpha, axiom, is_alpha(An, Aalpha, Ac) <=> (amino_residue_n(An) & bSINGLE(An, Aalpha)  & atom(Aalpha) & charge0(Aalpha) & c(Aalpha) & bSINGLE(Aalpha, Ac) & carboxy_residue_c(Ac))).
-fof(is_alpha_with_side_chain, axiom, is_alpha_with_side_chain(An, Aalpha, Ac, A1) <=> (is_alpha(An, Aalpha, Ac) & has_1_hs(Aalpha) & ~has_forth_bond(Aalpha, An, Ac, A1) & bSINGLE(Aalpha, A1) & atom(A1) & c(A1) & charge0(A1))).
+fof(is_alpha_with_side_chain, axiom, is_alpha_with_side_chain(An, Aalpha, Ac, A1) <=> (amino_residue_n(An) & bSINGLE(An, Aalpha)  & atom(Aalpha) & charge0(Aalpha) & c(Aalpha) & bSINGLE(Aalpha, Ac) & carboxy_residue_c(Ac) & has_1_hs(Aalpha) & ~has_forth_bond(Aalpha, An, Ac, A1) & bSINGLE(Aalpha, A1) & atom(A1) & c(A1) & charge0(A1))).
+
+fof(has_nh2_neighbor, axiom, (has_nh2_neighbor(X) <=> ?[N]: (has_bond_to(X,N) & n(N) & has_2_hs(N)))).
