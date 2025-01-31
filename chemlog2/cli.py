@@ -5,7 +5,7 @@ import click
 import tqdm
 
 from chemlog2.classification.charge_classifier import get_charge_category, ChargeCategories
-from chemlog2.verification.functional_groups_verifier import FunctionalGroupsVerifier
+from chemlog2.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
 from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
@@ -16,11 +16,11 @@ import logging
 import os
 import ast
 
-from chemlog2.verification.charge_verifier import ChargeVerifier
-from chemlog2.verification.model_checking import ModelCheckerOutcome
-from chemlog2.verification.peptide_size_verifier import PeptideSizeVerifier
-from chemlog2.verification.proteinogenics_verifier import ProteinogenicsVerifier
-from chemlog2.verification.substruct_verifier import SubstructVerifier
+from chemlog2.fol_classification.charge_verifier import ChargeVerifier
+from chemlog2.fol_classification.model_checking import ModelCheckerOutcome
+from chemlog2.fol_classification.peptide_size_verifier import PeptideSizeVerifier
+from chemlog2.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
+from chemlog2.fol_classification.substruct_verifier import SubstructVerifier
 
 
 class LiteralOption(click.Option):

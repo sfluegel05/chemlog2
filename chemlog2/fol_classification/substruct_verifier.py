@@ -6,7 +6,7 @@ from gavel.dialects.tptp.parser import TPTPParser
 import os
 
 from chemlog2.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
-from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
 class SubstructVerifier:

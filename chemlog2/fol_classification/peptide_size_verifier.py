@@ -9,7 +9,7 @@ from gavel.logic import logic
 import os
 
 from chemlog2.preprocessing.mol_to_fol import mol_to_fol_building_blocks, apply_variable_assignment
-from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
 class PeptideSizeVerifier:

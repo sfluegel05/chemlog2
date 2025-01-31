@@ -7,7 +7,7 @@ from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formu
 import numpy as np
 
 from chemlog2.preprocessing.chebi_data import ChEBIData
-from chemlog2.verification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 from chemlog2.classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
 
 
