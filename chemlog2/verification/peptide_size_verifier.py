@@ -56,7 +56,7 @@ class PeptideSizeVerifier:
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
                                                          for pred, formula in self.structure_formulas.items()})
         assignment = None
-        for n in range(2, 10):
+        for n in range(2, 11):
             target_formula = build_peptide_structure_formula(n)
             outcome = model_checker.find_model(target_formula)
             if outcome[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
@@ -65,6 +65,7 @@ class PeptideSizeVerifier:
                 return outcome, None
             # map second-order element back to atoms
             assignment = {v: second_order_elements[ind] for v, ind in outcome[1]}
+        return 10, assignment
 
 
 def build_peptide_structure_formula(n):

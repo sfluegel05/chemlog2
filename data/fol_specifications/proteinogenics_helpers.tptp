@@ -7,3 +7,4 @@ fof(is_alpha, axiom, is_alpha(An, Aalpha, Ac) <=> (amino_residue_n(An) & bSINGLE
 fof(is_alpha_with_side_chain, axiom, is_alpha_with_side_chain(An, Aalpha, Ac, A1) <=> (amino_residue_n(An) & bSINGLE(An, Aalpha)  & atom(Aalpha) & charge0(Aalpha) & c(Aalpha) & bSINGLE(Aalpha, Ac) & carboxy_residue_c(Ac) & has_1_hs(Aalpha) & ~has_forth_bond(Aalpha, An, Ac, A1) & bSINGLE(Aalpha, A1) & atom(A1) & c(A1) & charge0(A1))).
 
 fof(has_nh2_neighbor, axiom, (has_nh2_neighbor(X) <=> ?[N]: (has_bond_to(X,N) & n(N) & has_2_hs(N)))).
+fof(formylated, axiom, formylated(X) <=> ?[Ac, Ao]: (bSINGLE(X, Ac) & atom(Ac) & c(Ac) & charge0(Ac) & has_1_hs(Ac) & bDOUBLE(Ac, Ao) & atom(Ao) & o(Ao) & charge0(Ao) & has_0_hs(Ao))).

@@ -118,7 +118,7 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
-    for id, row in tqdm.tqdm(data_filtered.iterrows()):
+    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying"):
         logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
         start_time = time.perf_counter()
         charge_category = get_charge_category(row["mol"])
@@ -198,7 +198,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
     i = 0
-    for id, row in tqdm.tqdm(data_filtered.iterrows()):
+    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Verifying"):
         logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
         start_time = time.perf_counter()
         add_output = {}
