@@ -13,6 +13,7 @@ from chemlog2.classification.peptide_size_classifier import get_carboxy_derivati
 from chemlog2.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
 from chemlog2.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
 from chemlog2.preprocessing.chebi_data import ChEBIData
+from chemlog2.preprocessing.pubchem_data import PubChemData
 from chemlog2.timestamped_logger import TimestampedLogger
 import logging
 import os
@@ -145,6 +146,51 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
                            "proteinogenics_locations_no_carboxy": proteinogenics_locations_no_carboxy}
 
     json_logger.save_items("classify", results)
+
+
+@cli.command(help="Classify Pubchem molecules using a direct Python implementation")
+@click.option('--from-batch', '-f', type=int, default=0, help='Start at this PubChem batch')
+@click.option('--to-batch', '-t', type=int, default=375, help='End at this PubChem batch (exclusive)')
+@click.option('--return-chebi-classes', '-c', is_flag=True, help='Return assigned ChEBI classes')
+def classify_pubchem(from_batch, to_batch, return_chebi_classes):
+    json_logger = TimestampedLogger()
+    json_logger.start_run(f"classify_pubchem", {
+        "return_chebi_classes": return_chebi_classes, "from_batch": from_batch, "to_batch": to_batch})
+
+    for batch_id in range(from_batch, to_batch):
+        data_filtered = PubChemData().get_processed_batch(batch_id)
+
+        results = []
+        logging.info(f"Classifying {len(data_filtered)} molecules")
+        for pubchem_id, mol in tqdm.tqdm(data_filtered.items(), total=len(data_filtered), desc=f"Classifying batch {batch_id}"):
+            start_time = time.perf_counter()
+            charge_category = get_charge_category(mol)
+            n_amino_acid_residues, add_output = get_n_amino_acid_residues(mol)
+            if n_amino_acid_residues > 1:
+                proteinogenics, _, _ = get_proteinogenic_amino_acids(mol,
+                                                                     add_output["amino_residue"],
+                                                                     add_output["carboxy_residue"])
+            else:
+                proteinogenics = []
+            results.append({
+                'pubchem_id': pubchem_id,
+                'charge_category': charge_category.name,
+                'n_amino_acid_residues': n_amino_acid_residues,
+                'proteinogenics': proteinogenics,
+                'time': f"{time.perf_counter() - start_time:.4f}"
+            })
+
+            if n_amino_acid_residues == 5:
+                emericellamide = is_emericellamide(mol)
+                results[-1]["emericellamide"] = emericellamide[0]
+            if n_amino_acid_residues == 2:
+                diketopiperazine = is_diketopiperazine(mol)
+                results[-1]["2,5-diketopiperazines"] = diketopiperazine[0]
+
+            if return_chebi_classes:
+                results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
+
+        json_logger.save_items(f"classify_pubchem{batch_id:03d}", results)
 
 
 @cli.command(help="Classify ChEBI molecules using  first-order logic (FOL)")
