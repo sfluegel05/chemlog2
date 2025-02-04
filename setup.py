@@ -10,6 +10,7 @@ setup(
         'pandas',
         'rdkit',
         'requests',
+        'tqdm',
     ],
     author='Simon Flügel',
     author_email='simon.fluegel@uos.de',

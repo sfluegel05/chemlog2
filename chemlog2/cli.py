@@ -3,6 +3,7 @@ import time
 
 import click
 import tqdm
+import networkx as nx
 
 from chemlog2.classification.charge_classifier import get_charge_category, ChargeCategories
 from chemlog2.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
@@ -10,6 +11,7 @@ from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_res
 from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
 from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
 from chemlog2.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
+from chemlog2.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
 from chemlog2.preprocessing.chebi_data import ChEBIData
 from chemlog2.timestamped_logger import TimestampedLogger
 import logging
@@ -31,13 +33,12 @@ class LiteralOption(click.Option):
             raise click.BadParameter(value)
 
 
-@click.group()
+@click.group(help="CLI for classifying peptides")
 def cli():
     pass
 
 
 def resolve_chebi_classes(classification):
-    # todo: use the ontology to automatically add indirect superclasses
     n_amino_acid_residues = classification["n_amino_acid_residues"]
     charge_category = classification["charge_category"]
     res = []
@@ -86,7 +87,7 @@ def resolve_chebi_classes(classification):
     return res
 
 
-@cli.command()
+@cli.command(help="Classify ChEBI molecules using a direct Python implementation")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
               help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
@@ -100,21 +101,8 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
     json_logger = TimestampedLogger(None, run_name, debug_mode)
     json_logger.start_run("classify", {"chebi_version": chebi_version, "molecules": molecules,
                                        "return_chebi_classes": return_chebi_classes, "run_name": run_name,
-                                       "debug_mode": debug_mode})
-    data = ChEBIData(chebi_version).processed
-    if len(molecules) > 0:
-        data_filtered = data.loc[data.index.isin(molecules)]
-    else:
-        data_filtered = data
-    if only_3star:
-        data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
-
-    # start with shortest SMILES
-    data_filtered["smiles_length"] = [
-        len(str(row["smiles"]) if row["smiles"] is not None else "")
-        for _, row in data_filtered.iterrows()
-    ]
-    data_filtered.sort_values("smiles_length", inplace=True, ascending=True)
+                                       "debug_mode": debug_mode, "additional_output": additional_output, "only_3star": only_3star})
+    data_filtered = _supply_chebi_data(chebi_version, molecules, only_3star)
 
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
@@ -159,7 +147,7 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
     json_logger.save_items("classify", results)
 
 
-@cli.command()
+@cli.command(help="Classify ChEBI molecules using  first-order logic (FOL)")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
               help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
@@ -173,21 +161,8 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
     json_logger = TimestampedLogger(None, run_name, debug_mode)
     json_logger.start_run("classify_fol", {"chebi_version": chebi_version, "molecules": molecules,
                                        "return_chebi_classes": return_chebi_classes, "run_name": run_name,
-                                       "debug_mode": debug_mode})
-    data = ChEBIData(chebi_version).processed
-    if len(molecules) > 0:
-        data_filtered = data.loc[data.index.isin(molecules)]
-    else:
-        data_filtered = data
-    if only_3star:
-        data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
-
-    # start with shortest SMILES
-    data_filtered["smiles_length"] = [
-        len(str(row["smiles"]) if row["smiles"] is not None else "")
-        for _, row in data_filtered.iterrows()
-    ]
-    data_filtered.sort_values("smiles_length", inplace=True, ascending=True)
+                                       "debug_mode": debug_mode, "additional_output": additional_output, "only_3star": only_3star})
+    data_filtered = _supply_chebi_data(chebi_version, molecules, only_3star)
 
     charge_verifier = ChargeVerifier()
     functional_groups_verifier = FunctionalGroupsVerifier()
@@ -198,7 +173,7 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
     i = 0
-    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Verifying"):
+    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying (FOL)"):
         logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
         start_time = time.perf_counter()
         add_output = {}
@@ -255,8 +230,69 @@ def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug
 
     json_logger.save_items("classify_fol", results)
 
+@cli.command(help="Classify ChEBI molecules (only according to their number of amino acids) using monadic second-order logic (MSOL)")
+@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
+@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
+              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
+@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
+@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
+@click.option('--only-peptides', '-p', is_flag=True, help='Only consider peptide molecules')
+def classify_msol(chebi_version, molecules, run_name, debug_mode, only_peptides):
+    json_logger = TimestampedLogger(None, run_name, debug_mode)
+    json_logger.start_run("classify_msol", {"chebi_version": chebi_version, "molecules": molecules,
+                                      "run_name": run_name, "debug_mode": debug_mode, "only_peptides": only_peptides})
+    data_filtered = _supply_chebi_data(chebi_version, molecules, False, only_peptides)
 
-@cli.command()
+    peptide_size_classifier = MonaPeptideSizeClassifier()
+
+    results = []
+    logging.info(f"Classifying {len(data_filtered)} molecules")
+    i = 0
+    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying (MSOL)"):
+        logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
+        start_time = time.perf_counter()
+
+        n_amino_acid_residues, attempts = peptide_size_classifier.classify_peptide_size_mona(row["mol"])
+        logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
+
+        results.append({
+            'chebi_id': id,
+            'n_amino_acid_residues': n_amino_acid_residues,
+            'proof_attempts': attempts,
+        })
+
+        results[-1]["time"] = f"{time.perf_counter() - start_time:.4f}"
+
+        i += 1
+        if (i % 10) == 0:
+            json_logger.save_items("classify_msol", results)
+
+    json_logger.save_items("classify_msol", results)
+
+def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False):
+    data_cls = ChEBIData(chebi_version)
+    data = data_cls.processed
+    if len(molecules) > 0:
+        data_filtered = data.loc[data.index.isin(molecules)]
+    else:
+        data_filtered = data
+    if only_3star:
+        data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
+    if only_peptides:
+        trans_hierarchy = data_cls.get_trans_hierarchy()
+        data_filtered = data_filtered.loc[list(set.intersection(set(nx.descendants(trans_hierarchy, 16670)),
+                                                                set(data_filtered.index)))]
+
+
+    # start with shortest SMILES
+    data_filtered["smiles_length"] = [
+        len(str(row["smiles"]) if row["smiles"] is not None else "")
+        for _, row in data_filtered.iterrows()
+    ]
+    data_filtered.sort_values("smiles_length", inplace=True, ascending=True)
+    return data_filtered
+
+@cli.command(help="Verify results from a `classify` run using first-order logic (FOL)")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
 @click.option('--results-dir', '-r', type=str, required=True, help='Directory where results.json to analyse is located')
 @click.option('--debug-mode', '-d', is_flag=True, help='Returns additional states')

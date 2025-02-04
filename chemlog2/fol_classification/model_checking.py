@@ -206,7 +206,7 @@ class ModelChecker(AbstractModelChecker):
         )
 
     def find_model(
-            self, formula, timeout=0
+            self, formula, timeout=30
     ) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
         """Recursive strategy, insert one individual in the formula at a time, assume formula in PNF, CNF with
         only existential quantifiers"""
