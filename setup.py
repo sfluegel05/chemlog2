@@ -11,6 +11,8 @@ setup(
         'rdkit',
         'requests',
         'tqdm',
+        'click'
+        # not listed: gavel (needs installation from GitHub)
     ],
     author='Simon Flügel',
     author_email='simon.fluegel@uos.de',

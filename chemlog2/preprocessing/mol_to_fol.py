@@ -38,7 +38,7 @@ def mol_to_fol_atoms(mol: Chem.Mol):
         charge = atom.GetFormalCharge()
         if charge != 0:
             # get both general direction and specific charge
-            for predicate_symbol_charge in [f"charge_{'n' if charge < 0 else "p"}",
+            for predicate_symbol_charge in [f"charge_{'n' if charge < 0 else 'p'}",
                                             f"charge{'_m' + str(-1 * charge) if charge < 0 else str(charge)}"]:
                 if predicate_symbol_charge not in extensions:
                     extensions[predicate_symbol_charge] = np.zeros(universe, dtype=np.bool_)
