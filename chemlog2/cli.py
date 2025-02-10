@@ -450,13 +450,13 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
                outcome.values()):
             warning_str = ""
             if outcome["charge"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected charge: {expected["charge"]}, got: {outcome['charge'][0].name}, tried: {outcome['charge'][1]}\n"
+                warning_str += f"Expected charge: {expected['charge']}, got: {outcome['charge'][0].name}, tried: {outcome['charge'][1]}\n"
             if outcome["functional_groups"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected groups: {expected["functional_groups"]}, got {outcome['functional_groups'][0].name}, tried: {outcome['functional_groups'][1]}\n"
+                warning_str += f"Expected groups: {expected['functional_groups']}, got {outcome['functional_groups'][0].name}, tried: {outcome['functional_groups'][1]}\n"
             if outcome["size"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected {expected["n_amino_acid_residues"]} amino acids, got {outcome['size'][0].name}\n"
+                warning_str += f"Expected {expected['n_amino_acid_residues']} amino acids, got {outcome['size'][0].name}\n"
             if outcome["proteinogenics"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                warning_str += f"Expected proteinogenics: {expected["proteinogenics"]}, got {outcome['proteinogenics'][0].name}, tried {outcome['proteinogenics'][1]}\n"
+                warning_str += f"Expected proteinogenics: {expected['proteinogenics']}, got {outcome['proteinogenics'][0].name}, tried {outcome['proteinogenics'][1]}\n"
             if "emericellamide" in expected and outcome["emericellamide"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                 warning_str += f"Expected emericellamide, got {outcome['emericellamide'][0].name}\n"
             if "2,5-diketopiperazines" in expected and outcome["2,5-diketopiperazines"][0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
