@@ -48,7 +48,7 @@ class PubChemData:
                 try:
                     Chem.Kekulize(mol)
                 except Chem.KekulizeException as e:
-                    logging.warning(f"Failed kekulisation of {int(mol.GetProp("PUBCHEM_COMPOUND_CID"))}: {e}")
+                    logging.warning(f"Failed kekulisation of {int(mol.GetProp('PUBCHEM_COMPOUND_CID'))}: {e}")
                 yield int(mol.GetProp("PUBCHEM_COMPOUND_CID")), mol
 
     def get_processed_batch(self, batch_index):
