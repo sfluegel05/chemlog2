@@ -25,7 +25,7 @@ class TimestampedLogger:
         logging.basicConfig(
             format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
-            level=logging.DEBUG if debug_mode else logging.WARNING,
+            level=logging.DEBUG if debug_mode else logging.INFO,
             handlers=[logging.FileHandler(os.path.join(results_dir, "logs.log"), encoding="utf-8"),
                       logging.StreamHandler(sys.stdout)],
         )

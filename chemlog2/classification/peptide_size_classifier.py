@@ -6,12 +6,15 @@ import networkx as nx
 from itertools import product
 
 
-def get_n_amino_acid_residues(mol) -> (int, dict):
+def get_n_amino_acid_residues(mol, max_amino_assignments: int = 10000) -> (int, dict):
     """
     Determine the number of amino acid residues that are connected via peptide bonds in a molecule.
     This method does not distinguish between 1 and 0. None is returned if some error has occurred.
 
     An amino acid residue is delimited by heteroatoms.
+
+    max_amino_assignments: int - maximum number of amino acid assignments to consider (due to resource limitations,
+    e.g. Pubchem 59097399 would require iterating 2^27 assignments)
     """
 
     amide_bonds, amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs = get_amide_bonds(mol)
@@ -35,7 +38,13 @@ def get_n_amino_acid_residues(mol) -> (int, dict):
     # iterate over possible assignments of amino groups to chunks
     longest_aa_chain = []
     longest_aa_chain_with_atoms = []
+    i = 0
     for amino_assignment in product(*possible_amino_chunk_assignments):
+        i += 1
+        if i > max_amino_assignments:
+            logging.warning(f"Max amino assignments reached ({max_amino_assignments})")
+            add_output["warning"] = f"Max amino assignments reached ({max_amino_assignments})"
+            break
         # amino acid: carboxy residue and amino group in carbon-connected subgraph
         is_amino_acid = [i in amino_assignment for i in range(len(chunks))]
         if sum(is_amino_acid) < 2:

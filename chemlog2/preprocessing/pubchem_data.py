@@ -1,15 +1,10 @@
 import gzip
-import json
 import logging
 import os
 import pickle
-import time
 
-import networkx as nx
 import requests
-import fastobo
-from rdkit import Chem
-import pandas as pd
+from rdkit import Chem, RDLogger
 
 
 class PubChemData:
@@ -17,6 +12,7 @@ class PubChemData:
     def __init__(self):
 
         os.makedirs(self.base_dir, exist_ok=True)
+        RDLogger.DisableLog('rdApp.*')
         # self.download_sdf()
 
     @property
@@ -53,6 +49,7 @@ class PubChemData:
 
     def get_processed_batch(self, batch_index):
         if not os.path.exists(self.sdf_path(batch_index)):
+            logging.info(f"Downloading batch {batch_index}")
             self.download_sdf(batch_index)
         processed_path = os.path.join(self.base_dir, f"processed_{batch_index:03d}.pkl")
         if not os.path.exists(processed_path):

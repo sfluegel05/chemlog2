@@ -108,7 +108,7 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
     results = []
     logging.info(f"Classifying {len(data_filtered)} molecules")
     for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying"):
-        logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
+        logging.info(f"Classifying CHEBI:{id} ({row['name']})")
         start_time = time.perf_counter()
         charge_category = get_charge_category(row["mol"])
         logging.debug(f"Charge category is {charge_category}")
@@ -152,7 +152,9 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 @click.option('--from-batch', '-f', type=int, default=0, help='Start at this PubChem batch')
 @click.option('--to-batch', '-t', type=int, default=375, help='End at this PubChem batch (exclusive)')
 @click.option('--return-chebi-classes', '-c', is_flag=True, help='Return assigned ChEBI classes')
-def classify_pubchem(from_batch, to_batch, return_chebi_classes):
+@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
+              help='List of PubChem IDs to classify. Default: all PubChem entries.')
+def classify_pubchem(from_batch, to_batch, return_chebi_classes, molecules):
     json_logger = TimestampedLogger()
     json_logger.start_run(f"classify_pubchem", {
         "return_chebi_classes": return_chebi_classes, "from_batch": from_batch, "to_batch": to_batch})
@@ -160,9 +162,15 @@ def classify_pubchem(from_batch, to_batch, return_chebi_classes):
     for batch_id in range(from_batch, to_batch):
         data_filtered = PubChemData().get_processed_batch(batch_id)
 
+        if len(molecules) > 0:
+            data_filtered = {k: v for k, v in data_filtered.items() if k in molecules}
+
         results = []
-        logging.info(f"Classifying {len(data_filtered)} molecules")
-        for pubchem_id, mol in tqdm.tqdm(data_filtered.items(), total=len(data_filtered), desc=f"Classifying batch {batch_id}"):
+        logging.info(f"Starting batch {batch_id} ({len(data_filtered)} molecules)")
+        with tqdm.tqdm(total=len(data_filtered), desc=f"Classifying batch {batch_id}") as pbar:
+          for pubchem_id, mol in data_filtered.items():
+            pbar.set_description(f"Classifying molecule {pubchem_id}")
+            pbar.update()
             start_time = time.perf_counter()
             charge_category = get_charge_category(mol)
             n_amino_acid_residues, add_output = get_n_amino_acid_residues(mol)
