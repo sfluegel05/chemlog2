@@ -52,7 +52,7 @@ def mol_to_fol_atoms(mol: Chem.Mol):
         # exception: if molecule only consists of a single H atom, don't assume that a second H has to be added
         if universe != 1 or atom.GetAtomicNum() != 1:
             num_hs = atom.GetTotalNumHs(includeNeighbors=True)
-            predicate_symbols = [f"has_{num_hs}_hs"] + [f"has_min_{n}_hs" for n in range(1, num_hs + 1)]
+            predicate_symbols = [f"has_{num_hs}_hs"] + [f"has_at_least_{n}_hs" for n in range(1, num_hs + 1)]
             for predicate_symbol in predicate_symbols:
                 if predicate_symbol not in extensions:
                     extensions[predicate_symbol] = np.zeros(
@@ -238,7 +238,7 @@ def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: bool = False, add_
         if not allow_additional_bonds and atom.GetAtomicNum() != 0:
             # obsolete if Hs are filtered out: and (len(list(mol.GetAtoms())) != 1 or atom.GetAtomicNum() != 1):
             clauses.append(logic.PredicateExpression(f"has_{num_hs}_hs", [variable]))
-        else:
+        elif num_hs > 0:
             # wildcards are an exception and can always have more H atoms
             clauses.append(logic.PredicateExpression(f"has_min_{num_hs}_hs", [variable]))
 
@@ -266,5 +266,6 @@ def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: bool = False, add_
 
 if __name__ == "__main__":
     data = ChEBIData(239)
-    for _, row in  data.processed[[83813 in row["parents"] for _, row in data.processed.iterrows()]].iterrows():
-        print(row["name"], mol_to_fol_formula(row["mol"], allow_additional_bonds=False))
+    print(mol_to_fol_atoms(data.processed.loc[48604, "mol"]))
+    #for _, row in  data.processed[[83813 in row["parents"] for _, row in data.processed.iterrows()]].iterrows():
+    #    print(row["name"], mol_to_fol_formula(row["mol"], allow_additional_bonds=False))
