@@ -11,12 +11,12 @@ setup(
         'rdkit',
         'requests',
         'tqdm',
-        'click'
-        # not listed: gavel (needs installation from GitHub)
+        'click',
+        'gavel'
     ],
     author='Simon Flügel',
     author_email='simon.fluegel@uos.de',
-    description='Peptide classifier for ChEBI',
+    description='Peptide classifier for ChEBI / PubChem',
     license='MIT',
 
 )
