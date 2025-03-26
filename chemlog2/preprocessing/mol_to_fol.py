@@ -52,12 +52,13 @@ def mol_to_fol_atoms(mol: Chem.Mol):
         # exception: if molecule only consists of a single H atom, don't assume that a second H has to be added
         if universe != 1 or atom.GetAtomicNum() != 1:
             num_hs = atom.GetTotalNumHs(includeNeighbors=True)
-            predicate_symbol = f"has_{num_hs}_hs"
-            if predicate_symbol not in extensions:
-                extensions[predicate_symbol] = np.zeros(
-                    universe, dtype=np.bool_
-                )
-            extensions[predicate_symbol][atom_idx] = True
+            predicate_symbols = [f"has_{num_hs}_hs"] + [f"has_at_least_{n}_hs" for n in range(1, num_hs + 1)]
+            for predicate_symbol in predicate_symbols:
+                if predicate_symbol not in extensions:
+                    extensions[predicate_symbol] = np.zeros(
+                        universe, dtype=np.bool_
+                    )
+                extensions[predicate_symbol][atom_idx] = True
 
         if atom.HasProp("_CIPCode"):
             chiral_code = f'cip_code_{atom.GetProp("_CIPCode")}'
@@ -210,7 +211,7 @@ def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: 
     return formula
 
 
-def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: False):
+def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: bool = False, add_global_charge: bool = False):
     clauses = []
     try:
         Chem.rdCIPLabeler.AssignCIPLabels(mol)
@@ -223,28 +224,35 @@ def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: False):
 
     for atom in mol.GetAtoms():
         variable = v[atom.GetIdx()]
-        clauses.append(logic.PredicateExpression("atom", [variable]))
-        # skip wildcards
-        if atom.GetAtomicNum() == 0:
+        # skip H atoms
+        if atom.GetAtomicNum() == 1:
             continue
-        clauses.append(logic.PredicateExpression(atom.GetSymbol().lower(), [variable]))
-        charge = atom.GetFormalCharge()
-        clauses.append(logic.PredicateExpression(f"charge{'_m' + str(-1 * charge) if charge < 0 else str(charge)}", [variable]))
-        if atom.HasProp("_CIPCode"):
-            clauses.append(logic.PredicateExpression(f"cip_code_{atom.GetProp('_CIPCode')}", [variable]))
-        if not allow_additional_bonds and (len(list(mol.GetAtoms())) != 1 or atom.GetAtomicNum() != 1):
-            num_hs = atom.GetTotalNumHs(includeNeighbors=True)
+        clauses.append(logic.PredicateExpression("atom", [variable]))
+        if atom.GetAtomicNum() != 0:
+            clauses.append(logic.PredicateExpression(atom.GetSymbol().lower(), [variable]))
+            charge = atom.GetFormalCharge()
+            clauses.append(logic.PredicateExpression(f"charge{'_m' + str(-1 * charge) if charge < 0 else str(charge)}", [variable]))
+            if atom.HasProp("_CIPCode"):
+                clauses.append(logic.PredicateExpression(f"cip_code_{atom.GetProp('_CIPCode')}", [variable]))
+        num_hs = atom.GetTotalNumHs(includeNeighbors=True)
+        if not allow_additional_bonds and atom.GetAtomicNum() != 0:
+            # obsolete if Hs are filtered out: and (len(list(mol.GetAtoms())) != 1 or atom.GetAtomicNum() != 1):
             clauses.append(logic.PredicateExpression(f"has_{num_hs}_hs", [variable]))
+        elif num_hs > 0:
+            # wildcards are an exception and can always have more H atoms
+            clauses.append(logic.PredicateExpression(f"has_min_{num_hs}_hs", [variable]))
 
     for bond in mol.GetBonds():
         left = v[bond.GetBeginAtomIdx()]
         right = v[bond.GetEndAtomIdx()]
-        clauses.append(logic.PredicateExpression("has_bond_to", [left, right]))
+        # skip H atoms
+        if bond.GetBeginAtom().GetAtomicNum() == 1 or bond.GetEndAtom().GetAtomicNum() == 1:
+            continue
         clauses.append(logic.PredicateExpression(f"b{bond.GetBondType()}", [left, right]))
         if bond.GetStereo() != Chem.BondStereo.STEREONONE:
             clauses.append(logic.PredicateExpression(f"b{bond.GetStereo().name}", [left, right]))
 
-    if not allow_additional_bonds:
+    if add_global_charge:
         if Chem.GetFormalCharge(mol) < 0:
             clauses.append(logic.PredicateExpression("net_charge_negative", [v[-1]]))
         elif Chem.GetFormalCharge(mol) > 0:
@@ -258,5 +266,6 @@ def mol_to_fol_formula(mol: Chem.Mol, allow_additional_bonds: False):
 
 if __name__ == "__main__":
     data = ChEBIData(239)
-    for _, row in  data.processed[[83813 in row["parents"] for _, row in data.processed.iterrows()]].iterrows():
-        print(row["name"], mol_to_fol_formula(row["mol"], allow_additional_bonds=False))
+    print(mol_to_fol_atoms(data.processed.loc[48604, "mol"]))
+    #for _, row in  data.processed[[83813 in row["parents"] for _, row in data.processed.iterrows()]].iterrows():
+    #    print(row["name"], mol_to_fol_formula(row["mol"], allow_additional_bonds=False))

@@ -61,7 +61,7 @@ class PeptideSizeVerifier:
             if outcome[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
                 return n - 1, assignment
             elif outcome[0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                return outcome, None
+                return -1, None
             # map second-order element back to atoms
             assignment = {v: second_order_elements[ind] for v, ind in outcome[1]}
         return 10, assignment

@@ -84,9 +84,9 @@ class ProteinogenicsVerifier:
             if outcome[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                 proven_amino_acids.append(amino_acid_predicate[3:])
                 variable_assignments.append([ind for _, ind in outcome[1]])
-                logging.info(f"{amino_acid_predicate} has been found")
+                logging.debug(f"{amino_acid_predicate} has been found")
             else:
-                logging.info(f"{amino_acid_predicate} has not been found: {outcome}")
+                logging.debug(f"{amino_acid_predicate} has not been found: {outcome}")
 
         return proven_amino_acids, variable_assignments
 

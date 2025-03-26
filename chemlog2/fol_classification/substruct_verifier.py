@@ -19,12 +19,22 @@ class SubstructVerifier:
         # take right-hand side of formulas
         self.substruct_defs = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        helper_path = os.path.join("data", "fol_specifications", "substruct_helpers.tptp")
+        if os.path.exists(helper_path):
+            with open(helper_path, "r") as f:
+                tptp_raw = f.readlines()
+            tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
+            self.substruct_helpers = {f[0].formula.left.predicate.value:
+                                        f[0].formula for f in tptp_parsed if len(f) > 0}
+        else:
+            self.substruct_helpers = dict()
 
 
     def verify_substruct_class(self, mol: Chem.Mol, target_cls: str, atoms: list):
         universe, extensions = mol_to_fol_atoms(mol)
         model_checker = ModelChecker(
-            universe, extensions
+            universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
+                                                         for pred, formula in self.substruct_helpers.items()}
         )
         target_formula = self.substruct_defs[target_cls]
         if len(atoms) != len(target_formula.left.arguments):
@@ -56,3 +66,10 @@ class SubstructVerifier:
                 result = ModelCheckerOutcome.ERROR, []
 
         return result[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED], result
+
+
+if __name__ == "__main__":
+    mol = Chem.MolFromSmiles("O.O.[Cl-].[Cl-].[Ba++]")
+    Chem.Kekulize(mol)
+    verifier = SubstructVerifier()
+    print(verifier.classify_substruct_class(mol, "chebi_48238"))
