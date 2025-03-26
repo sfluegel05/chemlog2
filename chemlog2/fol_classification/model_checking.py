@@ -178,7 +178,7 @@ class ModelChecker(AbstractModelChecker):
                             self.find_model(def_formula)[0]
                             == ModelCheckerOutcome.MODEL_FOUND
                     )
-                    logging.info(
+                    logging.debug(
                         f"<<< Adding {', '.join(str(arg) for arg in literal.arguments)} as "
                         f"{'positive' if model_found else 'negative'} to extension of {literal.predicate}"
                     )
@@ -238,6 +238,7 @@ class ModelChecker(AbstractModelChecker):
                     and clause.operator == logic.BinaryConnective.DISJUNCTION
             ):
                 clauses[i] = binary_to_nary(clause, logic.BinaryConnective.DISJUNCTION)
+        # TODO check how efficient this mechanism is
         if formula in self.proven_formulae:
             logging.debug(
                 f"Skipping formula {formula} because it has already been proven"

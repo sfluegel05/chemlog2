@@ -150,7 +150,7 @@ def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mod
 
 @cli.command(help="Classify Pubchem molecules using a direct Python implementation")
 @click.option('--from-batch', '-f', type=int, default=0, help='Start at this PubChem batch')
-@click.option('--to-batch', '-t', type=int, default=375, help='End at this PubChem batch (exclusive)')
+@click.option('--to-batch', '-t', type=int, default=346, help='End at this PubChem batch (exclusive)')
 @click.option('--return-chebi-classes', '-c', is_flag=True, help='Return assigned ChEBI classes')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
               help='List of PubChem IDs to classify. Default: all PubChem entries.')
