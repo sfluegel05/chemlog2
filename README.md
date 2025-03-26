@@ -55,78 +55,93 @@ If you want to use the MONA reasoner, you have to install it separately (the cla
 
 ChemLog provides a command line interface for the classification. Results are in JSON format for each run, alongside a log and a config file.
 
-**Command**: `python -m chemlog classify`
+**Command**: 
+  
+    python -m chemlog classify
 
   Apply the algorithmic implementation to ChEBI data.
 
 Options:
-  -v, --chebi-version INTEGER  ChEBI version  [required]
-  -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
-                               ChEBI classes.
-  -c, --return-chebi-classes   Return ChEBI classes
-  -n, --run-name TEXT          Results will be stored at
-                               results/%y%m%d_%H%M_{run_name}/
-  -d, --debug-mode             Logs at debug level
-  -o, --additional-output      Returns intermediate steps in output, useful
-                               for explainability and verification
-  -3, --only-3star             Only consider 3-star molecules
-  --help                       Show this message and exit.
 
-**Command**: `python -m chemlog classify-pubchem`
+    -v, --chebi-version INTEGER  ChEBI version  [required]
+    -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
+                                 ChEBI classes.
+    -c, --return-chebi-classes   Return ChEBI classes
+    -n, --run-name TEXT          Results will be stored at
+                                 results/%y%m%d_%H%M_{run_name}/
+    -d, --debug-mode             Logs at debug level
+    -o, --additional-output      Returns intermediate steps in output, useful
+                                 for explainability and verification
+    -3, --only-3star             Only consider 3-star molecules
+    --help                       Show this message and exit.
+
+**Command**: 
+
+    python -m chemlog classify-pubchem
 
   Apply the algorithmic implementation to PubChem data.
 
 Options:
-  -f, --from-batch INTEGER    Start at this PubChem batch (each batch consists of 500,000 ids)
-  -t, --to-batch INTEGER      End at this PubChem batch (exclusive)
-  -c, --return-chebi-classes  Return assigned ChEBI classes
-  -m, --molecules TEXT        List of PubChem IDs to classify. Default: all
-                              PubChem entries.
-  --help                      Show this message and exit.
 
-**Command**: `python -m chemlog classify-fol`
+    -f, --from-batch INTEGER    Start at this PubChem batch (each batch consists of 500,000 ids)
+    -t, --to-batch INTEGER      End at this PubChem batch (exclusive)
+    -c, --return-chebi-classes  Return assigned ChEBI classes
+    -m, --molecules TEXT        List of PubChem IDs to classify. Default: all
+                                PubChem entries.
+    --help                      Show this message and exit.
+
+**Command**: 
+
+    python -m chemlog classify-fol
 
   Apply the FOL implementation to PubChem data.
 
 Options:
-  -v, --chebi-version INTEGER  ChEBI version  [required]
-  -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
-                               ChEBI classes.
-  -c, --return-chebi-classes   Return ChEBI classes
-  -n, --run-name TEXT          Results will be stored at
-                               results/%y%m%d_%H%M_{run_name}/
-  -d, --debug-mode             Logs at debug level
-  -o, --additional-output      Returns intermediate steps in output, useful
-                               for explainability and verification
-  -3, --only-3star             Only consider 3-star molecules
-  --help                       Show this message and exit.
 
-**Command**: `python -m chemlog classify-msol`
+    -v, --chebi-version INTEGER  ChEBI version  [required]
+    -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
+                                 ChEBI classes.
+    -c, --return-chebi-classes   Return ChEBI classes
+    -n, --run-name TEXT          Results will be stored at
+                                 results/%y%m%d_%H%M_{run_name}/
+    -d, --debug-mode             Logs at debug level
+    -o, --additional-output      Returns intermediate steps in output, useful
+                                 for explainability and verification
+    -3, --only-3star             Only consider 3-star molecules
+    --help                       Show this message and exit.
+
+**Command**: 
+
+    python -m chemlog classify-msol
 
   Apply the MSOL implementation to PubChem data.
 
 Options:
-  -v, --chebi-version INTEGER  ChEBI version  [required]
-  -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
-                               ChEBI classes.
-  -n, --run-name TEXT          Results will be stored at
-                               results/%y%m%d_%H%M_{run_name}/
-  -d, --debug-mode             Logs at debug level
-  -p, --only-peptides          Only consider peptide molecules
-  --help                       Show this message and exit.
 
-**Command**: `python -m chemlog verify`
+    -v, --chebi-version INTEGER  ChEBI version  [required]
+    -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
+                                 ChEBI classes.
+    -n, --run-name TEXT          Results will be stored at
+                                 results/%y%m%d_%H%M_{run_name}/
+    -d, --debug-mode             Logs at debug level
+    -p, --only-peptides          Only consider peptide molecules
+    --help                       Show this message and exit.
+
+**Command**: 
+
+    python -m chemlog verify
 
   Given a results file, run the FOL classification for the same classes. This is typically used to check if the algorithmic and FOL classifications match for certain classes.
 
 Options:
-  -v, --chebi-version INTEGER  ChEBI version  [required]
-  -r, --results-dir TEXT       Directory where results.json to analyse is
-                               located  [required]
-  -d, --debug-mode             Returns additional states
-  -m, --molecules TEXT         List of ChEBI IDs to verify. Default: all ChEBI
-                               classes.
-  -3, --only-3star             Only consider 3-star molecules
-  --help                       Show this message and exit.
+   
+    -v, --chebi-version INTEGER  ChEBI version  [required]
+    -r, --results-dir TEXT       Directory where results.json to analyse is
+                                 located  [required]
+    -d, --debug-mode             Returns additional states
+    -m, --molecules TEXT         List of ChEBI IDs to verify. Default: all ChEBI
+                                 classes.
+    -3, --only-3star             Only consider 3-star molecules
+    --help                       Show this message and exit.
 
 
