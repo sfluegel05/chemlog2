@@ -1,7 +1,7 @@
 import logging
 import subprocess
 
-from chemlog2.fol_classification.model_checking import ModelCheckerOutcome, AbstractModelChecker
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome, AbstractModelChecker
 
 
 class MonaModelChecker(AbstractModelChecker):

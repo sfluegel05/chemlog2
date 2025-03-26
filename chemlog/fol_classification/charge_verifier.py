@@ -1,11 +1,11 @@
-from chemlog2.classification.charge_classifier import ChargeCategories
+from chemlog.classification.charge_classifier import ChargeCategories
 from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic import logic
 import os
 
-from chemlog2.preprocessing.mol_to_fol import mol_to_fol_fragments, apply_variable_assignment
-from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.preprocessing.mol_to_fol import mol_to_fol_fragments, apply_variable_assignment
+from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
 class ChargeVerifier:

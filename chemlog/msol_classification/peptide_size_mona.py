@@ -1,8 +1,8 @@
 import os
 
-from chemlog2.fol_classification.model_checking import ModelCheckerOutcome
-from chemlog2.msol_classification.mona_model_checker import MonaModelChecker
-from chemlog2.preprocessing.mol_to_msol import mol_to_msol
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome
+from chemlog.msol_classification.mona_model_checker import MonaModelChecker
+from chemlog.preprocessing.mol_to_msol import mol_to_msol
 
 
 class MonaPeptideSizeClassifier:

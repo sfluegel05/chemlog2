@@ -1,4 +1,4 @@
-from chemlog2.cli import cli
+from chemlog.cli import cli
 
 if __name__ == "__main__":
     """

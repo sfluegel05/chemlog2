@@ -9,7 +9,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 import matplotlib.pyplot as plt
 
-from chemlog2.preprocessing.chebi_data import ChEBIData
+from chemlog.preprocessing.chebi_data import ChEBIData
 
 LABEL = [24866, 25696, 25697, 27369, 60334, 60194, 60466, 90799, 155837, 16670, 25676, 46761, 47923, 48030, 48545,
          15841]

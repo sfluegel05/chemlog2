@@ -7,9 +7,9 @@ from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
 import os
 
-from chemlog2.preprocessing.chebi_data import ChEBIData
-from chemlog2.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
-from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.preprocessing.chebi_data import ChEBIData
+from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
+from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
 class ProteinogenicsVerifier:
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     verifier = ProteinogenicsVerifier()
     data = ChEBIData(239)
     mol = data.processed.loc[73845, "mol"]
-    from chemlog2.results import plot_mol
+    from chemlog.results import plot_mol
     plot_mol(mol)
     fg = {"amino_residue_n": [4,9], "carboxy_residue_c": [0, 6, 10]}
     print(verifier.classify_proteinogenics(mol,fg))

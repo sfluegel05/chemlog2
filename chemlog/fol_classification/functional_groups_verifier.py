@@ -9,8 +9,8 @@ from gavel.logic import logic, logic_utils
 import os
 from itertools import permutations
 
-from chemlog2.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
-from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
+from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
 class FunctionalGroupsVerifier:

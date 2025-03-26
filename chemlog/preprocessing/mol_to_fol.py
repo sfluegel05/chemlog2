@@ -6,9 +6,9 @@ from gavel.logic import logic
 from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula
 import numpy as np
 
-from chemlog2.preprocessing.chebi_data import ChEBIData
-from chemlog2.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
-from chemlog2.classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
+from chemlog.preprocessing.chebi_data import ChEBIData
+from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
 
 
 def mol_to_fol_atoms(mol: Chem.Mol):

@@ -5,25 +5,25 @@ import click
 import tqdm
 import networkx as nx
 
-from chemlog2.classification.charge_classifier import get_charge_category, ChargeCategories
-from chemlog2.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
-from chemlog2.classification.peptide_size_classifier import get_n_amino_acid_residues
-from chemlog2.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
-from chemlog2.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
-from chemlog2.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
-from chemlog2.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
-from chemlog2.preprocessing.chebi_data import ChEBIData
-from chemlog2.preprocessing.pubchem_data import PubChemData
-from chemlog2.timestamped_logger import TimestampedLogger
+from chemlog.classification.charge_classifier import get_charge_category, ChargeCategories
+from chemlog.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
+from chemlog.classification.peptide_size_classifier import get_n_amino_acid_residues
+from chemlog.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
+from chemlog.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
+from chemlog.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
+from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
+from chemlog.preprocessing.chebi_data import ChEBIData
+from chemlog.preprocessing.pubchem_data import PubChemData
+from chemlog.timestamped_logger import TimestampedLogger
 import logging
 import os
 import ast
 
-from chemlog2.fol_classification.charge_verifier import ChargeVerifier
-from chemlog2.fol_classification.model_checking import ModelCheckerOutcome
-from chemlog2.fol_classification.peptide_size_verifier import PeptideSizeVerifier
-from chemlog2.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
-from chemlog2.fol_classification.substruct_verifier import SubstructVerifier
+from chemlog.fol_classification.charge_verifier import ChargeVerifier
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome
+from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier
+from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
+from chemlog.fol_classification.substruct_verifier import SubstructVerifier
 
 
 class LiteralOption(click.Option):

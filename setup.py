@@ -1,9 +1,9 @@
 from setuptools import setup
 
 setup(
-    name='chemlog2',
-    version='0.1.0',
-    packages=['chemlog2'],
+    name='chemlog',
+    version='1.0.0',
+    packages=['chemlog'],
     install_requires=[
         'fastobo',
         'networkx',
