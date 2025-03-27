@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 from pathlib import Path
 this_directory = Path(__file__).parent
@@ -8,8 +8,8 @@ setup(
     name='chemlog',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    version='1.0.2',
-    packages=['chemlog'],
+    version='1.0.3',
+    packages=find_packages(),
     install_requires=[
         'fastobo',
         'networkx',
@@ -18,7 +18,8 @@ setup(
         'requests',
         'tqdm',
         'click',
-        'gavel'
+        'gavel',
+        'numpy>=2.0.0',
     ],
     author='Simon Flügel',
     author_email='simon.fluegel@uos.de',

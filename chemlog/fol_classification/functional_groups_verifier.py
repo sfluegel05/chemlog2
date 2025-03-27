@@ -1,16 +1,12 @@
 import logging
-
-import numpy as np
-
-from rdkit import Chem
-from gavel.dialects.tptp.parser import TPTPParser
-from gavel.logic.logic_utils import get_vars_in_formula, substitute_var_in_formula
-from gavel.logic import logic, logic_utils
 import os
-from itertools import permutations
 
-from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
+from gavel.dialects.tptp.parser import TPTPParser
+from gavel.logic import logic, logic_utils
+from rdkit import Chem
+
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 
 
 class FunctionalGroupsVerifier:
