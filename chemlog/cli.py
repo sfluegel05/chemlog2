@@ -356,19 +356,37 @@ def classify_qbf(chebi_version, molecules, run_name, debug_mode, only_peptides):
     peptide_size_classifier = QBFPeptideSizeClassifier()
 
     results = []
-    data_filtered = data_filtered[:1000]
+    data_filtered = data_filtered[:50]
     logging.info(f"Classifying {len(data_filtered)} molecules")
     i = 0
 
-    def __qbf_call_wrapper(row):
-        id = row[0]
-        row = row[1]
-        return _qbf_call(peptide_size_classifier, id, row)
-    for i in range(0, len(data_filtered), 100):
-        with mp.Pool(processes=10) as pool:
-            res = pool.map(__qbf_call_wrapper, data_filtered[i*100:(i+1)*100].iterrows())
-            results += res
-            json_logger.save_items("classify_qbf", results)
+    def __qbf_call_wrapper(q, input_q):
+        while not input_q.empty():
+            try:
+                id, row = input_q.get_nowait()
+                q.put(_qbf_call(peptide_size_classifier, id, row))
+            except Exception as e:
+                break
+
+    q = mp.Queue()
+    input_q = mp.Queue()
+    for id, row in data_filtered.iterrows():
+        input_q.put((id, row))
+
+    processes = []
+    n_workers = min(mp.cpu_count(), input_q.qsize())
+    logging.info(f"Starting {n_workers} worker processes")
+    for _ in range(n_workers):
+        p = mp.Process(target=__qbf_call_wrapper, args=(q, input_q,))
+        processes.append(p)
+        p.start()
+    while any(p.is_alive() for p in processes):
+        if not q.empty():
+            result = q.get()
+            results.append(result)
+            i += 1
+            if (i % 10) == 0:
+                json_logger.save_items("classify_qbf", results)
 
 
 def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False):
