@@ -1,6 +1,6 @@
 import json
 import time
-
+import multiprocess as mp
 import click
 import tqdm
 import networkx as nx
@@ -14,6 +14,7 @@ from chemlog.classification.substructure_classifier import is_emericellamide, is
 from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.pubchem_data import PubChemData
+from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifier
 from chemlog.timestamped_logger import TimestampedLogger
 import logging
 import os
@@ -322,6 +323,53 @@ def classify_msol(chebi_version, molecules, run_name, debug_mode, only_peptides)
             json_logger.save_items("classify_msol", results)
 
     json_logger.save_items("classify_msol", results)
+
+
+def _qbf_call(peptide_size_classifier, id, row):
+    logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
+    start_time = time.perf_counter()
+
+    n_amino_acid_residues, attempts = peptide_size_classifier.classify_peptide_size_qbf(row["mol"])
+    logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
+
+    return {
+        'chebi_id': id,
+        'n_amino_acid_residues': n_amino_acid_residues,
+        'proof_attempts': attempts,
+        'time': f"{time.perf_counter() - start_time:.4f}"
+    }
+
+
+@cli.command(help="Classify ChEBI molecules (only according to their number of amino acids) using quantified boolean formulas (QBF)")
+@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
+@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
+              help='List of ChEBI IDs to classify. Default: all ChEBI classes, sorted by SMILES length.')
+@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
+@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
+@click.option('--only-peptides', '-p', is_flag=True, help='Only consider peptide molecules')
+def classify_qbf(chebi_version, molecules, run_name, debug_mode, only_peptides):
+    json_logger = TimestampedLogger(None, run_name, debug_mode)
+    json_logger.start_run("classify_qbf", {"chebi_version": chebi_version, "molecules": molecules,
+                                      "run_name": run_name, "debug_mode": debug_mode, "only_peptides": only_peptides})
+    data_filtered = _supply_chebi_data(chebi_version, molecules, False, only_peptides)
+
+    peptide_size_classifier = QBFPeptideSizeClassifier()
+
+    results = []
+    data_filtered = data_filtered[:1000]
+    logging.info(f"Classifying {len(data_filtered)} molecules")
+    i = 0
+
+    def __qbf_call_wrapper(row):
+        id = row[0]
+        row = row[1]
+        return _qbf_call(peptide_size_classifier, id, row)
+    for i in range(0, len(data_filtered), 100):
+        with mp.Pool(processes=10) as pool:
+            res = pool.map(__qbf_call_wrapper, data_filtered[i*100:(i+1)*100].iterrows())
+            results += res
+            json_logger.save_items("classify_qbf", results)
+
 
 def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False):
     data_cls = ChEBIData(chebi_version)

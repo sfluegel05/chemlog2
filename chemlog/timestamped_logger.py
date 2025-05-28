@@ -23,7 +23,7 @@ class TimestampedLogger:
         self.results_dir = results_dir
         os.makedirs(os.path.join(results_dir), exist_ok=True)
         logging.basicConfig(
-            format="[%(filename)s:%(lineno)s] %(asctime)s %(levelname)s %(message)s",
+            format="[%(filename)s:%(lineno)s] %(process)d %(asctime)s %(levelname)s %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             level=logging.DEBUG if debug_mode else logging.INFO,
             handlers=[logging.FileHandler(os.path.join(results_dir, "logs.log"), encoding="utf-8"),
