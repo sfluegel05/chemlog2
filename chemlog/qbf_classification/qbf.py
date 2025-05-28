@@ -1,4 +1,5 @@
 import enum
+import logging
 from collections import deque
 from copy import copy
 from typing import List
@@ -379,6 +380,7 @@ def cnf_to_qdimacs(formula, add_comments=True):
         if add_comments:
             comments.append(" ".join([str(v) for v in variable_ints]) + " 0  " + str(clause))
 
+    logging.debug(f"Created QDIMACS with {len(variable_names)} variables and {len(formula.formulas)} clauses")
     lines[0] = f"p cnf {len(variable_names)} {len(formula.formulas)}"
     return "\n".join([f"c {c}" for c in comments] + lines)
 

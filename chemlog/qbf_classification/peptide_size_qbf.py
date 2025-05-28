@@ -1,3 +1,4 @@
+import logging
 import os
 
 from rdkit import Chem
@@ -16,6 +17,7 @@ class QBFPeptideSizeClassifier:
 
         proof_attempts = []
         for n in range(2, 11):
+            logging.debug(f"Running QBF for peptide size {n} with {n_atoms} atoms")
             target_formula = build_peptide_structure(n, n_atoms)
             dimacs = [f"c Peptide structure {n}+"]
             dimacs.append(f"c Target formula: {target_formula}")
@@ -59,27 +61,36 @@ def build_peptide_structure(n_amino_acids, n_atoms):
         for i in range(n_amino_acids - 1)
     ]
     # peptide bond i overlaps aar <= i
+    # atom j from aar i+1 and atom l from aar k<i+1 have to be part of an amide bond
+    # for any j, j belongs to aar i and for any l, j and l belong to an amide bond and j belongs to any aar < i
     peptide_bond_overlaps = [
         qbf.NaryFormula(qbf.Connective.OR, [
-            qbf.NaryFormula(qbf.Connective.OR, [
-                qbf.BinaryFormula(f"pb_{i}_{j}", qbf.Connective.AND, f"aar_{k}_{j}")
-                for j in range(n_atoms)
+            qbf.NaryFormula(qbf.Connective.AND, [
+                f"aar_{i}_{j}",
+                qbf.NaryFormula(qbf.Connective.OR, [
+                    qbf.NaryFormula(qbf.Connective.AND, [
+                        qbf.BinaryFormula(exists_amide_given_n_c(n_atoms, j, l), qbf.Connective.OR,
+                                          exists_amide_given_n_c(n_atoms, l, j)),
+                        qbf.NaryFormula(qbf.Connective.OR, [f"aar_{k}_{l}" for k in range(i + 1)])
+                    ])
+                    for l in range(n_atoms)
+                ])
             ])
-            for k in range(i + 1)
+            for j in range(n_atoms)
         ])
-        for i in range(n_amino_acids - 1)
+        for i in range(1, n_amino_acids)
     ]
 
     return qbf.QuantifiedFormula(
         qbf.Quantifier.E,
-        [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)] +
-        [],#[f"pb_{i}_{j}" for i in range(n_amino_acids - 1) for j in range(n_atoms)],
+        [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)],  # +
+        # [f"pb_{i}_{j}" for i in range(n_amino_acids - 1) for j in range(n_atoms)],
         qbf.NaryFormula(qbf.Connective.AND, [
             *amino_acids,
-            #*peptide_bonds,
+            # *peptide_bonds,
             *pairwise_inequality,
-            #*bond_peptide_overlaps,
-            #*peptide_bond_overlaps
+            # *bond_peptide_overlaps,
+            *peptide_bond_overlaps
         ])
     )
 
@@ -280,7 +291,8 @@ def building_block(n_atoms: int, x_vars):
         )
         for i in range(n_atoms)
     ])
-    return qbf.QuantifiedFormula(qbf.Quantifier.E, y_vars, qbf.NaryFormula(qbf.Connective.AND, [carbon_comp, y_subset_x, rules_for_x]))
+    return qbf.QuantifiedFormula(qbf.Quantifier.E, y_vars,
+                                 qbf.NaryFormula(qbf.Connective.AND, [carbon_comp, y_subset_x, rules_for_x]))
 
 
 def amino_acid_residue(n_atoms: int, x_vars):
@@ -377,7 +389,7 @@ if __name__ == "__main__":
     # dipeptide
     piperazine = "O=C1CNC(=O)CN1"  # CHEBI:16535
     glycylglycine = "NCC(=O)NCC(=O)O"  # CHEBI:17201
-    n_acetyl_methionyl_isoleucine = "CC[C@H](C)[C@H](NC(=O)[C@H](CCSC)NC(C)=O)C(=O)O" # CHEBI:134478
+    n_acetyl_methionyl_isoleucine = "CC[C@H](C)[C@H](NC(=O)[C@H](CCSC)NC(C)=O)C(=O)O"  # CHEBI:134478
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     classifier = QBFPeptideSizeClassifier()
