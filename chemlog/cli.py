@@ -186,7 +186,6 @@ def strategy_call(strategy, classifier_instances, ident, row):
         res['chebi_classes'] = resolve_chebi_classes(res)
     return res
 
-STRATEGIES = ['mona', 'qbf', 'fol', 'algo']
 
 class ClassifierKeys(enum.Enum):
     CHARGE = 0
@@ -199,8 +198,11 @@ CLASSIFIERS = {
     'mona': {
        ClassifierKeys.SIZE : MonaPeptideSizeClassifier,
     },
-    'qbf': {
+    'qbf-caqe': {
         ClassifierKeys.SIZE : QBFPeptideSizeClassifierCAQE,
+    },
+    'qbf-depqbf': {
+        ClassifierKeys.SIZE : QBFPeptideSizeClassifierDepQBF,
     },
     'fol': {
         ClassifierKeys.CHARGE: ChargeVerifier,
@@ -219,7 +221,7 @@ CLASSIFIERS = {
 
 @cli.command(help="Classify ChEBI molecules (only according to their number of amino acids) using quantified boolean formulas (QBF)")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
-@click.option('--strategy', '-s', type=click.Choice(STRATEGIES, case_sensitive=False), default='algo', help='Strategy to use for classification.')
+@click.option('--strategy', '-s', type=click.Choice(list(CLASSIFIERS.keys()), case_sensitive=False), default='algo', help='Strategy to use for classification.')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
               help='List of ChEBI IDs to classify. Default: all ChEBI classes, sorted by SMILES length')
 @click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{strategy}_{run_name}/')
