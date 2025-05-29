@@ -257,8 +257,8 @@ def matrix_to_cnf_tseytin(formula, verbose=False) -> (NaryFormula, List[str]):
             else:
                 equation[1].append(child)
         tseytin_equations.append(equation)
-    if verbose:
-        print(f"Tseytin equations:\n{"\n\t".join(str(eq) for eq in tseytin_equations)}")
+    #if verbose:
+    #    print(f"Tseytin equations:\n{"\n\t".join(str(eq) for eq in tseytin_equations)}")
 
     def neg(literal):
         if isinstance(literal, NegFormula):

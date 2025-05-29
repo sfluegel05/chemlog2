@@ -356,7 +356,7 @@ def classify_qbf(chebi_version, molecules, run_name, debug_mode, only_peptides):
     peptide_size_classifier = QBFPeptideSizeClassifier()
 
     results = []
-    data_filtered = data_filtered[:50]
+    data_filtered = data_filtered
     logging.info(f"Classifying {len(data_filtered)} molecules")
     i = 0
 
