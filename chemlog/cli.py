@@ -1,3 +1,4 @@
+import enum
 import json
 import time
 import multiprocess as mp
@@ -5,16 +6,20 @@ import click
 import tqdm
 import networkx as nx
 
-from chemlog.classification.charge_classifier import get_charge_category, ChargeCategories
+from chemlog.alg_classification.charge_classifier import get_charge_category, AlgChargeClassifier
+from chemlog.base_classifier import ChargeCategories
 from chemlog.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
-from chemlog.classification.peptide_size_classifier import get_n_amino_acid_residues
-from chemlog.classification.proteinogenics_classifier import get_proteinogenic_amino_acids
-from chemlog.classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
-from chemlog.classification.substructure_classifier import is_emericellamide, is_diketopiperazine
+from chemlog.alg_classification.peptide_size_classifier import get_n_amino_acid_residues, AlgPeptideSizeClassifier
+from chemlog.alg_classification.proteinogenics_classifier import get_proteinogenic_amino_acids, \
+    AlgProteinogenicsClassifier
+from chemlog.alg_classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, get_amino_groups
+from chemlog.alg_classification.substructure_classifier import is_emericellamide, is_diketopiperazine, \
+    AlgSubstructureClassifier
 from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
 from chemlog.preprocessing.chebi_data import ChEBIData
+from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 from chemlog.preprocessing.pubchem_data import PubChemData
-from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifier
+from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifierDepQBF, QBFPeptideSizeClassifierCAQE
 from chemlog.timestamped_logger import TimestampedLogger
 import logging
 import os
@@ -41,8 +46,8 @@ def cli():
 
 
 def resolve_chebi_classes(classification):
-    n_amino_acid_residues = classification["n_amino_acid_residues"]
-    charge_category = classification["charge_category"]
+    n_amino_acid_residues = classification[ClassifierKeys.SIZE.name]
+    charge_category = classification[ClassifierKeys.CHARGE.name]
     res = []
     if charge_category == ChargeCategories.SALT.name:
         res.append(24866) # salt (there is no class peptide salt)
@@ -81,72 +86,14 @@ def resolve_chebi_classes(classification):
             else:
                 # oligo
                 res.append(25676)
-    if "emericellamide" in classification and classification["emericellamide"]:
-        res.append(64372)
-    if "2,5-diketopiperazines" in classification and classification["2,5-diketopiperazines"]:
-        res.append(65061)
+    if ClassifierKeys.SUBSTRUCT.name in classification:
+        substruct_classification = classification[ClassifierKeys.SUBSTRUCT.name]
+        if "emericellamide" in substruct_classification and substruct_classification["emericellamide"]:
+            res.append(64372)
+        if "2,5-diketopiperazines" in substruct_classification and substruct_classification["2,5-diketopiperazines"]:
+            res.append(65061)
 
     return res
-
-
-@cli.command(help="Classify ChEBI molecules using a direct Python implementation")
-@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
-@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
-              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
-@click.option('--return-chebi-classes', '-c', is_flag=True, help='Return ChEBI classes')
-@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
-@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
-@click.option('--additional-output', '-o', is_flag=True, help='Returns intermediate steps in output, '
-                                                              'useful for explainability and verification')
-@click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
-def classify(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output, only_3star):
-    json_logger = TimestampedLogger(None, run_name, debug_mode)
-    json_logger.start_run("classify", {"chebi_version": chebi_version, "molecules": molecules,
-                                       "return_chebi_classes": return_chebi_classes, "run_name": run_name,
-                                       "debug_mode": debug_mode, "additional_output": additional_output, "only_3star": only_3star})
-    data_filtered = _supply_chebi_data(chebi_version, molecules, only_3star)
-
-    results = []
-    logging.info(f"Classifying {len(data_filtered)} molecules")
-    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying"):
-        logging.info(f"Classifying CHEBI:{id} ({row['name']})")
-        start_time = time.perf_counter()
-        charge_category = get_charge_category(row["mol"])
-        logging.debug(f"Charge category is {charge_category}")
-        n_amino_acid_residues, add_output = get_n_amino_acid_residues(row["mol"])
-        logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
-        if n_amino_acid_residues > 1:
-            proteinogenics, proteinogenics_locations, proteinogenics_locations_no_carboxy = get_proteinogenic_amino_acids(row["mol"],
-                                                                                     add_output["amino_residue"],
-                                                                                     add_output["carboxy_residue"])
-        else:
-            proteinogenics, proteinogenics_locations, proteinogenics_locations_no_carboxy = [], [], []
-        results.append({
-            'chebi_id': id,
-            'charge_category': charge_category.name,
-            'n_amino_acid_residues': n_amino_acid_residues,
-            'proteinogenics': proteinogenics,
-            'time': f"{time.perf_counter() - start_time:.4f}"
-        })
-
-        if n_amino_acid_residues == 5:
-            emericellamide = is_emericellamide(row["mol"])
-            results[-1]["emericellamide"] = emericellamide[0]
-            if additional_output and emericellamide[0]:
-                results[-1]["emericellamide_atoms"] = emericellamide[1]
-        if n_amino_acid_residues == 2:
-            diketopiperazine = is_diketopiperazine(row["mol"])
-            results[-1]["2,5-diketopiperazines"] = diketopiperazine[0]
-            if additional_output and diketopiperazine[0]:
-                results[-1]["2,5-diketopiperazines_atoms"] = diketopiperazine[1]
-
-        if return_chebi_classes:
-            results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
-        if additional_output:
-            results[-1] = {**results[-1], **add_output, "proteinogenics_locations": proteinogenics_locations,
-                           "proteinogenics_locations_no_carboxy": proteinogenics_locations_no_carboxy}
-
-    json_logger.save_items("classify", results)
 
 
 @cli.command(help="Classify Pubchem molecules using a direct Python implementation")
@@ -202,191 +149,134 @@ def classify_pubchem(from_batch, to_batch, return_chebi_classes, molecules):
         json_logger.save_items(f"classify_pubchem{batch_id:03d}", results)
 
 
-@cli.command(help="Classify ChEBI molecules using  first-order logic (FOL)")
-@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
-@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
-              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
-@click.option('--return-chebi-classes', '-c', is_flag=True, help='Return ChEBI classes')
-@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
-@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
-@click.option('--additional-output', '-o', is_flag=True, help='Returns intermediate steps in output, '
-                                                              'useful for explainability and verification')
-@click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
-def classify_fol(chebi_version, molecules, return_chebi_classes, run_name, debug_mode, additional_output, only_3star):
-    json_logger = TimestampedLogger(None, run_name, debug_mode)
-    json_logger.start_run("classify_fol", {"chebi_version": chebi_version, "molecules": molecules,
-                                       "return_chebi_classes": return_chebi_classes, "run_name": run_name,
-                                       "debug_mode": debug_mode, "additional_output": additional_output, "only_3star": only_3star})
-    data_filtered = _supply_chebi_data(chebi_version, molecules, only_3star)
-
-    charge_verifier = ChargeVerifier()
-    functional_groups_verifier = FunctionalGroupsVerifier()
-    peptide_size_verifier = PeptideSizeVerifier()
-    proteinogenics_verifier = ProteinogenicsVerifier()
-    substruct_verifier = SubstructVerifier()
-
-    results = []
-    logging.info(f"Classifying {len(data_filtered)} molecules")
-    i = 0
-    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying (FOL)"):
-        logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
-        start_time = time.perf_counter()
-        add_output = {}
-        charge_category, charge_assignments = charge_verifier.classify_charge(row["mol"])
-        if charge_assignments is not None:
-            add_output["charge_assignments"] = charge_assignments
-        logging.debug(f"Charge category is {charge_category}")
-        functional_groups = functional_groups_verifier.classify_functional_groups(row["mol"])
-        n_amino_acid_residues, size_assignments = peptide_size_verifier.classify_n_amino_acids(row["mol"], functional_groups)
-        add_output["n_amino_acid_residues_atoms"] = size_assignments
-        logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
-        if n_amino_acid_residues > 1:
-            atom_level_functional_groups = {
-                "amino_residue_n": [amino[0] for amino in functional_groups["amino_residue"]],
-                "carboxy_residue_c": [carboxy[0] for carboxy in functional_groups["carboxy_residue"]]}
-
-            proteinogenics, proteinogenics_locations = proteinogenics_verifier.classify_proteinogenics(
-                row["mol"], atom_level_functional_groups)
-        else:
-            proteinogenics, proteinogenics_locations = [], []
-        add_output["proteinogenics_locations"] = proteinogenics_locations
-
-        results.append({
-            'chebi_id': id,
-            'charge_category': charge_category.name,
-            'n_amino_acid_residues': n_amino_acid_residues,
-            'functional_groups': functional_groups,
-            'proteinogenics': proteinogenics,
-        })
-
-        if n_amino_acid_residues == 5:
-            emericellamide = substruct_verifier.classify_substruct_class(row["mol"], "emericellamide")
-            results[-1]["emericellamide"] = emericellamide[0]
-            if emericellamide[0]:
-                add_output["emericellamide_atoms"] = emericellamide[1]
-        if n_amino_acid_residues == 2:
-            diketopiperazine = is_diketopiperazine(row["mol"])
-            results[-1]["2,5-diketopiperazines"] = diketopiperazine[0]
-            if diketopiperazine[0]:
-                add_output["2,5-diketopiperazines_atoms"] = diketopiperazine[1]
-
-        results[-1]["time"] = f"{time.perf_counter() - start_time:.4f}"
-
-
-
-        if return_chebi_classes:
-            results[-1]['chebi_classes'] = resolve_chebi_classes(results[-1])
-        if additional_output:
-            results[-1] = {**results[-1], **add_output}
-
-        i += 1
-        if (i % 2000) == 0:
-            json_logger.save_items("classify_fol", results)
-
-    json_logger.save_items("classify_fol", results)
-
-@cli.command(help="Classify ChEBI molecules (only according to their number of amino acids) using monadic second-order logic (MSOL)")
-@click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
-@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
-              help='List of ChEBI IDs to classify. Default: all ChEBI classes.')
-@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
-@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
-@click.option('--only-peptides', '-p', is_flag=True, help='Only consider peptide molecules')
-def classify_msol(chebi_version, molecules, run_name, debug_mode, only_peptides):
-    json_logger = TimestampedLogger(None, run_name, debug_mode)
-    json_logger.start_run("classify_msol", {"chebi_version": chebi_version, "molecules": molecules,
-                                      "run_name": run_name, "debug_mode": debug_mode, "only_peptides": only_peptides})
-    data_filtered = _supply_chebi_data(chebi_version, molecules, False, only_peptides)
-
-    peptide_size_classifier = MonaPeptideSizeClassifier()
-
-    results = []
-    logging.info(f"Classifying {len(data_filtered)} molecules")
-    i = 0
-    for id, row in tqdm.tqdm(data_filtered.iterrows(), total=len(data_filtered), desc="Classifying (MSOL)"):
-        logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
-        start_time = time.perf_counter()
-
-        n_amino_acid_residues, attempts = peptide_size_classifier.classify_peptide_size_mona(row["mol"])
-        logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
-
-        results.append({
-            'chebi_id': id,
-            'n_amino_acid_residues': n_amino_acid_residues,
-            'proof_attempts': attempts,
-        })
-
-        results[-1]["time"] = f"{time.perf_counter() - start_time:.4f}"
-
-        i += 1
-        if (i % 10) == 0:
-            json_logger.save_items("classify_msol", results)
-
-    json_logger.save_items("classify_msol", results)
-
-
-def _qbf_call(peptide_size_classifier, id, row):
-    logging.debug(f"Classifying CHEBI:{id} ({row['name']})")
+def strategy_call(strategy, classifier_instances, ident, row):
+    logging.debug(f"Classifying CHEBI:{ident} ({row['name']})")
+    res = {"chebi_id": ident}
     start_time = time.perf_counter()
 
-    n_amino_acid_residues, attempts = peptide_size_classifier.classify_peptide_size_qbf(row["mol"])
-    logging.debug(f"Found {n_amino_acid_residues} amino acid residues")
+    if strategy == 'fol':
+        fol_structure = mol_to_fol_atoms(row["mol"])
 
-    return {
-        'chebi_id': id,
-        'n_amino_acid_residues': n_amino_acid_residues,
-        'proof_attempts': attempts,
-        'time': f"{time.perf_counter() - start_time:.4f}"
+    for key in ClassifierKeys:
+        if key in classifier_instances:
+            args = []
+            # FOL size and proteinogenics classifiers need functional groups, substruct classifier needs size
+            if strategy == 'fol':
+                if key in [ClassifierKeys.SIZE, ClassifierKeys.PROTEINOGENICS]:
+                    args.append(res[ClassifierKeys.FGS.name])
+                elif key in [ClassifierKeys.SUBSTRUCT]:
+                    args.append(res[ClassifierKeys.SIZE.name])
+                # To avoid computing the fol structure 3 times, calculate it here and pass it to the classifiers
+                if key in [ClassifierKeys.FGS, ClassifierKeys.SUBSTRUCT, ClassifierKeys.PROTEINOGENICS]:
+                    args.append(fol_structure)
+            # Algorithmic approach produces functional groups as a side product -> reuse
+            elif strategy == 'algo':
+                if key in [ClassifierKeys.PROTEINOGENICS]:
+                    args += [res[f"{ClassifierKeys.SIZE.name}_additional"]['amino_residue'],
+                             res[f"{ClassifierKeys.SIZE.name}_additional"]['carboxy_residue']]
+
+            classification, additional_output = classifier_instances[key].classify(row["mol"], *args)
+            logging.debug(f"Classification for {key.name}: {classification}")
+            res[key.name] = classification
+            if additional_output is not None:
+                res[key.name + "_additional"] = additional_output
+
+    res['time'] = f"{time.perf_counter() - start_time:.4f}"
+    if ClassifierKeys.SIZE.name in res and ClassifierKeys.CHARGE.name in res:
+        res['chebi_classes'] = resolve_chebi_classes(res)
+    return res
+
+STRATEGIES = ['mona', 'qbf', 'fol', 'algo']
+
+class ClassifierKeys(enum.Enum):
+    CHARGE = 0
+    FGS = 1
+    SIZE = 2
+    PROTEINOGENICS = 3
+    SUBSTRUCT = 4
+
+CLASSIFIERS = {
+    'mona': {
+       ClassifierKeys.SIZE : MonaPeptideSizeClassifier,
+    },
+    'qbf': {
+        ClassifierKeys.SIZE : QBFPeptideSizeClassifierCAQE,
+    },
+    'fol': {
+        ClassifierKeys.CHARGE: ChargeVerifier,
+        ClassifierKeys.SIZE: PeptideSizeVerifier,
+        ClassifierKeys.FGS: FunctionalGroupsVerifier,
+        ClassifierKeys.PROTEINOGENICS: ProteinogenicsVerifier,
+        ClassifierKeys.SUBSTRUCT: SubstructVerifier,
+    },
+    'algo': {
+        ClassifierKeys.CHARGE: AlgChargeClassifier,
+        ClassifierKeys.SIZE: AlgPeptideSizeClassifier,
+        ClassifierKeys.PROTEINOGENICS: AlgProteinogenicsClassifier,
+        ClassifierKeys.SUBSTRUCT: AlgSubstructureClassifier,
     }
-
+}
 
 @cli.command(help="Classify ChEBI molecules (only according to their number of amino acids) using quantified boolean formulas (QBF)")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
+@click.option('--strategy', '-s', type=click.Choice(STRATEGIES, case_sensitive=False), default='algo', help='Strategy to use for classification.')
 @click.option('--molecules', '-m', cls=LiteralOption, default="[]",
-              help='List of ChEBI IDs to classify. Default: all ChEBI classes, sorted by SMILES length.')
-@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{run_name}/')
+              help='List of ChEBI IDs to classify. Default: all ChEBI classes, sorted by SMILES length')
+@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{strategy}_{run_name}/')
 @click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
 @click.option('--only-peptides', '-p', is_flag=True, help='Only consider peptide molecules')
-def classify_qbf(chebi_version, molecules, run_name, debug_mode, only_peptides):
-    json_logger = TimestampedLogger(None, run_name, debug_mode)
-    json_logger.start_run("classify_qbf", {"chebi_version": chebi_version, "molecules": molecules,
-                                      "run_name": run_name, "debug_mode": debug_mode, "only_peptides": only_peptides})
+@click.option('--begin-molecule', '-b', type=int, default=0, help='Start at this molecule index (applied after other selectors)')
+@click.option('--n-molecules', '-l', type=int, default=-1, help='End after this many molecules')
+@click.option('--n-workers', '-w', type=int, default=mp.cpu_count(), help='Number of worker processes to use (defaults to number of CPU cores)')
+def classify_chebi(strategy, chebi_version, molecules, run_name, debug_mode, only_peptides,  begin_molecule, n_molecules, n_workers):
+    json_logger = TimestampedLogger(None, f"{strategy}_{run_name}", debug_mode)
+    json_logger.start_run(f"classify_{strategy}", {"chebi_version": chebi_version, "molecules": molecules,
+                                      "run_name": run_name, "debug_mode": debug_mode, "only_peptides": only_peptides,
+                                                   "begin_molecule": begin_molecule, "n_molecules": n_molecules, "n_workers": n_workers})
+
     data_filtered = _supply_chebi_data(chebi_version, molecules, False, only_peptides)
-
-    peptide_size_classifier = QBFPeptideSizeClassifier()
-
-    results = []
-    data_filtered = data_filtered
+    data_filtered = data_filtered[begin_molecule:]
+    if n_molecules > 0:
+        data_filtered = data_filtered[:n_molecules]
     logging.info(f"Classifying {len(data_filtered)} molecules")
-    i = 0
 
-    def __qbf_call_wrapper(q, input_q):
-        while not input_q.empty():
-            try:
-                id, row = input_q.get_nowait()
-                q.put(_qbf_call(peptide_size_classifier, id, row))
-            except Exception as e:
-                break
+    classifier_instances = {
+        k: v() for k, v in CLASSIFIERS[strategy].items()
+    }
 
     q = mp.Queue()
     input_q = mp.Queue()
     for id, row in data_filtered.iterrows():
         input_q.put((id, row))
 
+    results = []
+    i = 0
+    def call_wrapper(strategy, q, input_q):
+        while not input_q.empty():
+                id, row = input_q.get_nowait()
+                q.put(strategy_call(strategy, classifier_instances, id, row))
+
     processes = []
-    n_workers = min(mp.cpu_count(), input_q.qsize())
+    n_workers = min(n_workers, input_q.qsize())
     logging.info(f"Starting {n_workers} worker processes")
+    input_size = input_q.qsize()
+    pbar = tqdm.tqdm(total=input_size, desc=f"Classifying with {strategy.upper()}")
+
     for _ in range(n_workers):
-        p = mp.Process(target=__qbf_call_wrapper, args=(q, input_q,))
+        p = mp.Process(target=call_wrapper, args=(strategy, q, input_q,))
         processes.append(p)
         p.start()
+
     while any(p.is_alive() for p in processes):
         if not q.empty():
             result = q.get()
+            pbar.update(1)
             results.append(result)
             i += 1
-            if (i % 10) == 0:
-                json_logger.save_items("classify_qbf", results)
+            if input_size < 10 or (i % (input_size // 10)) == 0:
+                json_logger.save_items(f"classify_{strategy}", results)
+
+    json_logger.save_items(f"classify_{strategy}", results)
 
 
 def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False):
@@ -541,6 +431,3 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
             save_results_at = i + (len(results) - i) // 4 + 10
             json_logger.save_items(f"verify_{json_logger.timestamp}", res)
     json_logger.save_items(f"verify_{json_logger.timestamp}", res)
-
-if __name__ == '__main__':
-    classify_fol(239, [], True, "", False, True)

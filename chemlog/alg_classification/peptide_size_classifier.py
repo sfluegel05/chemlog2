@@ -5,6 +5,14 @@ from rdkit import Chem
 import networkx as nx
 from itertools import product
 
+from chemlog.base_classifier import Classifier
+
+
+class AlgPeptideSizeClassifier(Classifier):
+
+    def classify(self, mol: Chem.Mol, *args, **kwargs) -> (int, dict):
+        return get_n_amino_acid_residues(mol, 10000)
+
 
 def get_n_amino_acid_residues(mol, max_amino_assignments: int = 10000) -> (int, dict):
     """

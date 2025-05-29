@@ -8,7 +8,7 @@ import numpy as np
 
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
-from chemlog.classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
+from chemlog.alg_classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
 
 
 def mol_to_fol_atoms(mol: Chem.Mol):

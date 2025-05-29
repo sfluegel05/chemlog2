@@ -22,8 +22,6 @@ class ChEBIData:
         self.chebi = self.process_chebi()
         # processed: dataframe that combines chebi data with mols from sdf file
         self.processed = self.process_data()
-        # hierarchy graph: networkx DiGraph with relations between ChEBI classes
-        self.hierarchy_graph = self.build_hierarchy_graph()
 
     @property
     def base_dir(self):
@@ -118,7 +116,7 @@ class ChEBIData:
         return df
 
     def build_hierarchy_graph(self):
-        print(f"Building hierarchy graph")
+        logging.debug(f"Building hierarchy graph")
         start_time = time.perf_counter()
         g = nx.DiGraph()
         g.add_nodes_from(self.chebi.keys())
@@ -126,12 +124,12 @@ class ChEBIData:
             if "parents" in row:
                 for parent in row["parents"]:
                     g.add_edge(parent, chebi_id)
-        print(f"Built hierarchy graph in {time.perf_counter() - start_time} seconds")
+        logging.debug(f"Built hierarchy graph in {time.perf_counter() - start_time:.2f} seconds")
         return g
 
     def get_trans_hierarchy(self):
         if not os.path.exists(self.trans_hierarchy_path):
-            g = self.hierarchy_graph
+            g = self.build_hierarchy_graph()
             with open(self.trans_hierarchy_path, "wb") as f:
                 pickle.dump(nx.transitive_closure(g), f)
             return g

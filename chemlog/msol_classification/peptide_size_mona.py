@@ -1,31 +1,37 @@
 import os
 
+from chemlog.base_classifier import Classifier
 from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 from chemlog.msol_classification.mona_model_checker import MonaModelChecker
 from chemlog.preprocessing.mol_to_msol import mol_to_msol
 
 
-class MonaPeptideSizeClassifier:
+class MonaPeptideSizeClassifier(Classifier):
 
     def __init__(self):
+        self._peptide_structures = dict()
         with open(os.path.join("data", "msol_specifications", "msol_formulas.mona"), "r") as f:
             self.predicate_definitions = "\n".join([l.strip() for l in f.readlines()])
 
+    def get_peptide_structure(self, n):
+        if n not in self._peptide_structures:
+            self._peptide_structures[n] = build_peptide_structure(n)
+        return self._peptide_structures[n]
 
-    def classify_peptide_size_mona(self, mol):
+    def classify(self, mol, *args, **kwargs):
         universe, mol_mona = mol_to_msol(mol)
         model_checker = MonaModelChecker(universe, mol_mona, self.predicate_definitions)
         proof_attempts = []
         for n in range(2, 11):
-            target_formula = build_peptide_structure(n)
+            target_formula = self.get_peptide_structure(n)
             outcome = model_checker.find_model(target_formula)
             proof_attempts.append(
                 {"target": n, "variable_assignments": outcome[1], "outcome": outcome[0].name})
             if outcome[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
-                return n - 1, proof_attempts
+                return n - 1, {"proof_attempts": proof_attempts}
             elif outcome[0] not in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
-                return 0, proof_attempts
-        return 10, proof_attempts
+                return 0, {"proof_attempts": proof_attempts}
+        return 10, {"proof_attempts": proof_attempts}
 
 
 def build_peptide_structure(n):

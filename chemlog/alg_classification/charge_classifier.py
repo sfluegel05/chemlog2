@@ -1,14 +1,12 @@
-from enum import auto
-import enum
 from rdkit import Chem
 
-class ChargeCategories(enum.Enum):
-    ANION = auto()
-    CATION = auto()
-    ZWITTERION = auto()
-    SALT = auto()
-    NEUTRAL = auto()
-    UNKNOWN = auto()
+from chemlog.base_classifier import ChargeCategories, Classifier
+
+
+class AlgChargeClassifier(Classifier):
+
+    def classify(self, mol: Chem.Mol, *args, **kwargs):
+        return get_charge_category(mol).name, None
 
 
 def get_charge_category(mol):
@@ -29,7 +27,7 @@ def get_charge_category(mol):
 
     Returns
     -------
-    category : ChargeCategories
+    category : chemlog.base_classifier.ChargeCategories
         The charge category of `mol`.
     """
     fragment_charges = []

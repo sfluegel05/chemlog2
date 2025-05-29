@@ -8,11 +8,12 @@ from gavel.logic.logic_utils import get_vars_in_formula, substitute_var_in_formu
 from gavel.logic import logic
 import os
 
+from chemlog.base_classifier import Classifier
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_building_blocks, apply_variable_assignment
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
-class PeptideSizeVerifier:
+class PeptideSizeVerifier(Classifier):
 
     def __init__(self):
         with open(os.path.join("data", "fol_specifications", "peptide_structure_helpers.tptp"), "r") as f:
@@ -44,7 +45,7 @@ class PeptideSizeVerifier:
             {"target": expected_n, "variable_assignments": variable_assignment, "outcome": result.name})
         return result, proof_attempts
 
-    def classify_n_amino_acids(self, mol: Chem.Mol, functional_groups):
+    def classify(self, mol: Chem.Mol, functional_groups=None, *args, **kwargs) -> (int, dict):
         # for functional_group_extensions, assume that they are true
         universe, extensions, second_order_elements = mol_to_fol_building_blocks(mol, functional_groups)
         logging.debug(f"Using the following second-order elements: "
@@ -64,7 +65,7 @@ class PeptideSizeVerifier:
                 return -1, None
             # map second-order element back to atoms
             assignment = {v: second_order_elements[ind] for v, ind in outcome[1]}
-        return 10, assignment
+        return 10, {"size_assignment": assignment}
 
 
 def build_peptide_structure_formula(n):

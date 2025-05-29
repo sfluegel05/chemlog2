@@ -5,11 +5,12 @@ from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic import logic, logic_utils
 from rdkit import Chem
 
+from chemlog.base_classifier import Classifier
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 
 
-class FunctionalGroupsVerifier:
+class FunctionalGroupsVerifier(Classifier):
 
     def __init__(self):
         with open(os.path.join("data", "fol_specifications", "functional_groups.tptp"), "r") as f:
@@ -56,8 +57,8 @@ class FunctionalGroupsVerifier:
         # only return positive result if **all** functional groups have been found
         return ModelCheckerOutcome.MODEL_FOUND if all_successful else ModelCheckerOutcome.NO_MODEL, proof_attempts
 
-    def classify_functional_groups(self, mol: Chem.Mol):
-        universe, extensions = mol_to_fol_atoms(mol)
+    def classify(self, mol: Chem.Mol, fol_structure=None, *args, **kwargs):
+        universe, extensions = mol_to_fol_atoms(mol) if fol_structure is None else fol_structure
         model_checker = ModelChecker(
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
                                                          for pred, formula in self.functional_group_helpers.items()})
@@ -91,10 +92,4 @@ class FunctionalGroupsVerifier:
                     group_atoms = [assigned_dict[v.symbol] for v in target_formula.left.arguments]
                     functional_groups[group].append(group_atoms)
 
-        return functional_groups
-
-
-if __name__ == "__main__":
-    from itertools import permutations
-
-    print(list(permutations(range(5), 3)))
+        return functional_groups, None

@@ -3,24 +3,39 @@ import os
 
 from rdkit import Chem
 
+from chemlog.base_classifier import Classifier
 from chemlog.preprocessing.mol_to_qbf import mol_to_propositional, get_atom_pvar, get_charge_pvar, get_h_count_pvar, \
     get_bond_pvar, get_bond_type_pvar
 from chemlog.qbf_classification import qbf
-from chemlog.qbf_classification.qbf_solver import qbf_solver
+from chemlog.qbf_classification.qbf_solver import qbf_solver_depqbf, qbf_solver_caqe
 
 
-class QBFPeptideSizeClassifier:
+class QBFPeptideSizeClassifierCAQE(Classifier):
 
-    def classify_peptide_size_qbf(self, mol):
+    def __init__(self):
+        self._peptide_structures = dict()
+
+    def get_peptide_structure(self, n_aars, n_atoms):
+        if n_aars not in self._peptide_structures:
+            self._peptide_structures[n_aars] = {n_atoms: build_peptide_structure(n_aars, n_atoms)}
+        elif n_atoms not in self._peptide_structures[n_aars]:
+            self._peptide_structures[n_aars][n_atoms] = build_peptide_structure(n_aars, n_atoms)
+        return self._peptide_structures[n_aars][n_atoms]
+
+
+    def solve_qdimacs(self, qdimacs):
+        return qbf_solver_caqe(qdimacs)
+
+
+    def classify(self, mol, *args, **kwargs):
         positive_literals, negative_literals = mol_to_propositional(mol)
         n_atoms = mol.GetNumAtoms()
 
         proof_attempts = []
         for n in range(2, 11):
             logging.debug(f"Running QBF for peptide size {n} with {n_atoms} atoms")
-            target_formula = build_peptide_structure(n, n_atoms)
-            dimacs = [f"c Peptide structure {n}+"]
-            dimacs.append(f"c Target formula: {target_formula}")
+            target_formula = self.get_peptide_structure(n, n_atoms)
+            dimacs = [f"c Peptide structure {n}+ ({n_atoms} atoms)"]
 
             formula = qbf.BinaryFormula(
                 qbf.NaryFormula(
@@ -30,9 +45,10 @@ class QBFPeptideSizeClassifier:
                 qbf.Connective.AND,
                 target_formula
             )
-            dimacs.append(qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(formula, use_tseytin=True, verbose=False)))
+            dimacs.append(
+                qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(formula, use_tseytin=True, verbose=False), add_comments=False))
 
-            outcome = qbf_solver(dimacs)
+            outcome = self.solve_qdimacs(dimacs)
             proof_attempts.append(
                 {"target": n, "outcome": outcome})
             if not outcome:
@@ -40,6 +56,12 @@ class QBFPeptideSizeClassifier:
             elif isinstance(outcome, str):
                 return 0, proof_attempts
         return 10, proof_attempts
+
+
+class QBFPeptideSizeClassifierDepQBF(QBFPeptideSizeClassifierCAQE):
+
+    def solve_qdimacs(self, qdimacs):
+        return qbf_solver_depqbf(qdimacs)
 
 
 def build_peptide_structure(n_amino_acids, n_atoms):
@@ -83,13 +105,10 @@ def build_peptide_structure(n_amino_acids, n_atoms):
 
     return qbf.QuantifiedFormula(
         qbf.Quantifier.E,
-        [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)],  # +
-        # [f"pb_{i}_{j}" for i in range(n_amino_acids - 1) for j in range(n_atoms)],
+        [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)],
         qbf.NaryFormula(qbf.Connective.AND, [
             *amino_acids,
-            # *peptide_bonds,
             *pairwise_inequality,
-            # *bond_peptide_overlaps,
             *peptide_bond_overlaps
         ])
     )
@@ -379,7 +398,7 @@ def di_plus_peptide_example(smiles):
     with open("qdimacs_demo/di_plus_example.qdimacs",
               "w", encoding="utf-8") as f:
         f.write("\n".join(dimacs))
-    print(f"SAT?", qbf_solver(dimacs))
+    print(f"SAT?", qbf_solver_depqbf(dimacs))
 
 
 if __name__ == "__main__":

@@ -7,12 +7,13 @@ from rdkit import Chem
 from gavel.dialects.tptp.parser import TPTPParser
 import os
 
+from chemlog.base_classifier import Classifier
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
 
-class ProteinogenicsVerifier:
+class ProteinogenicsVerifier(Classifier):
 
     def __init__(self):
         with open(os.path.join("data", "fol_specifications", "proteinogenics.tptp"), "r") as f:
@@ -27,10 +28,15 @@ class ProteinogenicsVerifier:
         tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
         self.helpers = {f[0].formula.left.predicate.value: f[0].formula for f in tptp_parsed if len(f) > 0}
 
-    def setup_model_checker(self, mol, functional_groups):
-        universe, extensions = mol_to_fol_atoms(mol)
+    def setup_model_checker(self, mol, functional_groups, fol_structure=None):
+        atom_level_functional_groups = {
+            "amino_residue_n": [amino[0] for amino in functional_groups["amino_residue"]],
+            "carboxy_residue_c": [carboxy[0] for carboxy in functional_groups["carboxy_residue"]]
+        }
+
+        universe, extensions = mol_to_fol_atoms(mol) if fol_structure is None else fol_structure
         # use atom-level extensions, enhanced with functional group information (broken down to single atoms)
-        for fg_name, fg_atom in functional_groups.items():
+        for fg_name, fg_atom in atom_level_functional_groups.items():
             if fg_name not in extensions:
                 extensions[fg_name] = np.zeros(universe, dtype=bool)
             extensions[fg_name][fg_atom] = True
@@ -66,10 +72,9 @@ class ProteinogenicsVerifier:
         # only return positive result if **all** proteinogenic amino acids have been found
         return ModelCheckerOutcome.MODEL_FOUND if all_successful else ModelCheckerOutcome.NO_MODEL, proof_attempts
 
-    def classify_proteinogenics(self, mol: Chem.Mol, functional_groups):
-        universe, extensions = mol_to_fol_atoms(mol)
+    def classify(self, mol: Chem.Mol, functional_groups=None, fol_structure=None, *args, **kwargs) -> (list, list):
         # use atom-level extensions, enhanced with functional group information (broken down to single atoms)
-        model_checker = self.setup_model_checker(mol, functional_groups)
+        model_checker = self.setup_model_checker(mol, functional_groups, fol_structure)
         proven_amino_acids = []
         variable_assignments = []
         for amino_acid_predicate, target_formula in self.proteinogenics_defs.items():
@@ -88,7 +93,7 @@ class ProteinogenicsVerifier:
             else:
                 logging.debug(f"{amino_acid_predicate} has not been found: {outcome}")
 
-        return proven_amino_acids, variable_assignments
+        return proven_amino_acids, {"proteinogenics_assignment": variable_assignments}
 
 if __name__ == "__main__":
     import sys

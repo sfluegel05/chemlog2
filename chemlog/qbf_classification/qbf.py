@@ -349,7 +349,7 @@ def qbf_to_cnf(formula, use_tseytin=True, verbose=False):
     return matrix
 
 
-def cnf_to_qdimacs(formula, add_comments=True):
+def cnf_to_qdimacs(formula, add_comments=False):
     # convert CNF formula to QDIMACS format
     variable_names = dict()
     comments = []
