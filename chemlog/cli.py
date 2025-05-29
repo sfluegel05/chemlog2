@@ -222,21 +222,22 @@ CLASSIFIERS = {
 @cli.command(help="Classify ChEBI molecules (only according to their number of amino acids) using quantified boolean formulas (QBF)")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
 @click.option('--strategy', '-s', type=click.Choice(list(CLASSIFIERS.keys()), case_sensitive=False), default='algo', help='Strategy to use for classification.')
-@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
-              help='List of ChEBI IDs to classify. Default: all ChEBI classes, sorted by SMILES length')
 @click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{strategy}_{run_name}/')
 @click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
+@click.option('--molecules', '-m', cls=LiteralOption, default="[]",
+              help='List of ChEBI IDs to classify. Default: all ChEBI classes, sorted by SMILES length')
+@click.option('--only-3star', '-3', is_flag=True, help='Only consider 3-star molecules')
 @click.option('--only-peptides', '-p', is_flag=True, help='Only consider peptide molecules')
 @click.option('--begin-molecule', '-b', type=int, default=0, help='Start at this molecule index (applied after other selectors)')
 @click.option('--n-molecules', '-l', type=int, default=-1, help='End after this many molecules')
 @click.option('--n-workers', '-w', type=int, default=mp.cpu_count(), help='Number of worker processes to use (defaults to number of CPU cores)')
-def classify_chebi(strategy, chebi_version, molecules, run_name, debug_mode, only_peptides,  begin_molecule, n_molecules, n_workers):
+def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, only_peptides, only_3star, begin_molecule, n_molecules, n_workers):
     json_logger = TimestampedLogger(None, f"{strategy}_{run_name}", debug_mode)
     json_logger.start_run(f"classify_{strategy}", {"chebi_version": chebi_version, "molecules": molecules,
                                       "run_name": run_name, "debug_mode": debug_mode, "only_peptides": only_peptides,
                                                    "begin_molecule": begin_molecule, "n_molecules": n_molecules, "n_workers": n_workers})
 
-    data_filtered = _supply_chebi_data(chebi_version, molecules, False, only_peptides)
+    data_filtered = _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides)
     data_filtered = data_filtered[begin_molecule:]
     if n_molecules > 0:
         data_filtered = data_filtered[:n_molecules]
