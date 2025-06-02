@@ -27,13 +27,15 @@ def get_n_amino_acid_residues(mol, max_amino_assignments: int = 10000) -> (int, 
 
     amide_bonds, amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs = get_amide_bonds(mol)
     add_output = {"amide_bond": [(c, o, n) for c, o, n in zip(amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs)]}
-    if len(amide_bonds) == 0:
-        return 0, add_output
+
     carboxys = list(get_carboxy_derivatives(mol))
     carboxy_c_idxs = [c for c, _, _ in carboxys]
     add_output["carboxy_residue"] = carboxys
     amino_group_idxs = get_amino_groups(mol, amide_bond_c_idxs)
     add_output["amino_residue"] = amino_group_idxs
+
+    if len(amide_bonds) == 0:
+        return 0, add_output
 
     # get carbon skeleton minus amide bonds
     chunks = get_chunks(mol, amide_bonds)
