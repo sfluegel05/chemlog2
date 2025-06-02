@@ -112,5 +112,5 @@ if __name__ == "__main__":
     # Example usage
     classifier = MonaPeptideSizeClassifierCompiled()
     from rdkit import Chem
-    mol = Chem.MolFromSmiles("C[C@H](N)C(=O)NCC(O)=O")
+    mol = Chem.MolFromSmiles("NCC(=O)NCC(=O)NCC(=O)O")
     print(classifier.classify(mol))

@@ -1,38 +1,37 @@
+import ast
 import enum
 import json
+import logging
+import os
 import time
-from queue import Empty
 
-import multiprocess as mp
 import click
-import tqdm
+import multiprocess as mp
 import networkx as nx
+import tqdm
+from rdkit import Chem
 
 from chemlog.alg_classification.charge_classifier import get_charge_category, AlgChargeClassifier
-from chemlog.base_classifier import ChargeCategories
-from chemlog.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
+from chemlog.alg_classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, \
+    get_amino_groups
 from chemlog.alg_classification.peptide_size_classifier import get_n_amino_acid_residues, AlgPeptideSizeClassifier
 from chemlog.alg_classification.proteinogenics_classifier import get_proteinogenic_amino_acids, \
     AlgProteinogenicsClassifier
-from chemlog.alg_classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, \
-    get_amino_groups
 from chemlog.alg_classification.substructure_classifier import is_emericellamide, is_diketopiperazine, \
     AlgSubstructureClassifier
-from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier
+from chemlog.base_classifier import ChargeCategories
+from chemlog.fol_classification.charge_verifier import ChargeVerifier
+from chemlog.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome
+from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier
+from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
+from chemlog.fol_classification.substruct_verifier import SubstructVerifier
+from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier, MonaPeptideSizeClassifierCompiled
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 from chemlog.preprocessing.pubchem_data import PubChemData
 from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifierDepQBF, QBFPeptideSizeClassifierCAQE
 from chemlog.timestamped_logger import TimestampedLogger
-import logging
-import os
-import ast
-
-from chemlog.fol_classification.charge_verifier import ChargeVerifier
-from chemlog.fol_classification.model_checking import ModelCheckerOutcome
-from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier
-from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
-from chemlog.fol_classification.substruct_verifier import SubstructVerifier
 
 
 class LiteralOption(click.Option):
@@ -153,7 +152,7 @@ def classify_pubchem(from_batch, to_batch, return_chebi_classes, molecules):
 
 
 def strategy_call(strategy, classifier_instances, ident, row):
-    logging.debug(f"Classifying CHEBI:{ident} ({row['name']})")
+    logging.debug(f"Classifying CHEBI:{ident} ({row['name']})  {Chem.MolToSmiles(row['mol'])}")
     res = {"chebi_id": ident}
     start_time = time.perf_counter()
 
@@ -200,7 +199,7 @@ class ClassifierKeys(enum.Enum):
 
 CLASSIFIERS = {
     'mona': {
-        ClassifierKeys.SIZE: MonaPeptideSizeClassifier,
+        ClassifierKeys.SIZE: MonaPeptideSizeClassifierCompiled,
     },
     'qbf-caqe': {
         ClassifierKeys.SIZE: QBFPeptideSizeClassifierCAQE,
