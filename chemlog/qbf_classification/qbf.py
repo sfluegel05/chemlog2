@@ -5,8 +5,6 @@ from copy import copy
 from typing import List
 from itertools import product
 
-from gavel.logic.logic import Quantifier, BinaryFormula
-
 
 class Quantifier(enum.Enum):
     # either A or E
