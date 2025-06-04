@@ -22,10 +22,8 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
             self._peptide_structures[n_aars][n_atoms] = build_peptide_structure(n_aars, n_atoms)
         return self._peptide_structures[n_aars][n_atoms]
 
-
     def solve_qdimacs(self, qdimacs):
         return qbf_solver_caqe(qdimacs)
-
 
     def classify(self, mol, *args, **kwargs):
         positive_literals, negative_literals = mol_to_propositional(mol)
@@ -118,20 +116,23 @@ def exists_amino(n_atoms, x_vars):
     # \exists A: Amino(A) \land A \subseteq X
     disjunction = []
     for n in range(n_atoms):
-        f = qbf.NaryFormula(qbf.Connective.AND, [
-            x_vars[n],
-            get_atom_pvar(n, 7),
-        ] + [
-                                qbf.BinaryFormula(
-                                    get_bond_pvar(n, x),
-                                    qbf.Connective.IMPLIES,
-                                    qbf.BinaryFormula(
-                                        get_bond_type_pvar(n, x, Chem.BondType.SINGLE),
-                                        qbf.Connective.OR,
-                                        exists_amide_given_n_c(n_atoms, n, x)
-                                    )
-                                )
-                                for x in range(n_atoms)])
+        f = qbf.NaryFormula(
+            qbf.Connective.AND,
+            [x_vars[n], get_atom_pvar(n, 7)] +
+            [qbf.BinaryFormula(
+                get_bond_pvar(n, x),
+                qbf.Connective.IMPLIES,
+                qbf.BinaryFormula(
+                    qbf.BinaryFormula(
+                        get_bond_type_pvar(n, x, Chem.BondType.SINGLE),
+                        qbf.Connective.OR,
+                        exists_amide_given_n_c(n_atoms, n, x)
+                    ),
+                    qbf.Connective.AND,
+                    get_atom_pvar(x, 6)
+                )
+            ) for x in range(n_atoms)]
+        )
         disjunction.append(f)
     return qbf.NaryFormula(qbf.Connective.OR, disjunction)
 
@@ -411,5 +412,6 @@ if __name__ == "__main__":
     n_acetyl_methionyl_isoleucine = "CC[C@H](C)[C@H](NC(=O)[C@H](CCSC)NC(C)=O)C(=O)O"  # CHEBI:134478
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
-    classifier = QBFPeptideSizeClassifier()
-    print(classifier.classify_peptide_size_qbf(Chem.MolFromSmiles(glycyl_glycyl_glycine)))
+    sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
+    classifier = QBFPeptideSizeClassifierDepQBF()
+    print(classifier.classify(Chem.MolFromSmiles("ON1C(CS)C(C[C@H]1C(=O)NCC(O)=O)c1ccc2OCOc2c1")))
