@@ -201,6 +201,9 @@ CLASSIFIERS = {
     'mona': {
         ClassifierKeys.SIZE: MonaPeptideSizeClassifierCompiled,
     },
+    'mona-from-file': {
+        ClassifierKeys.SIZE: MonaPeptideSizeClassifier,
+    },
     'qbf-caqe': {
         ClassifierKeys.SIZE: QBFPeptideSizeClassifierCAQE,
     },
@@ -238,7 +241,7 @@ CLASSIFIERS = {
               help='Start at this molecule index (applied after other selectors)')
 @click.option('--n-molecules', '-l', type=int, default=-1, help='End after this many molecules')
 @click.option('--n-workers', '-w', type=int, default=mp.cpu_count(),
-              help='Number of worker processes to use (defaults to number of CPU cores)')
+              help='Number of worker processes to use (defaults to number of CPU cores), use 0 for no multiprocessing')
 def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, only_peptides, only_3star, begin_molecule,
                    n_molecules, n_workers):
     json_logger = TimestampedLogger(None, f"{strategy}_{run_name}" if run_name is not None else strategy, debug_mode)
@@ -257,6 +260,16 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
     classifier_instances = {
         k: v() for k, v in CLASSIFIERS[strategy].items()
     }
+    # no multiprocessing
+    if n_workers == 0:
+        logging.info("Running in single-threaded mode")
+        results = []
+        for i, (id, row) in enumerate(data_filtered.iterrows()):
+            results.append(strategy_call(strategy, classifier_instances, id, row))
+            if len(data_filtered) < 100 or ((i+1) % (len(data_filtered) // 100)) == 0:
+                json_logger.save_items(f"classify_{strategy}", results)
+        json_logger.save_items(f"classify_{strategy}", results)
+        return
 
     output_q = mp.Queue()
     input_q = mp.Queue()
