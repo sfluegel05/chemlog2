@@ -8,6 +8,8 @@ from chemlog.preprocessing.mol_to_qbf import mol_to_propositional, get_atom_pvar
     get_bond_pvar, get_bond_type_pvar
 from chemlog.qbf_classification import qbf
 from chemlog.qbf_classification.qbf_solver import qbf_solver_depqbf, qbf_solver_caqe
+from chemlog.msol import peptide_size
+from chemlog.qbf_classification.qbf_translator import QBFTranslator
 
 
 class QBFPeptideSizeClassifierCAQE(Classifier):
@@ -15,11 +17,63 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
     def __init__(self):
         self._peptide_structures = dict()
 
+    @staticmethod
+    def build_peptide_structure(n_amino_acids, n_atoms):
+        # get qbf formula for peptide structure
+        amino_acids = [amino_acid_residue(n_atoms, [f"aar_{i}_{j}" for j in range(n_atoms)]) for i in
+                       range(n_amino_acids)]
+        peptide_bonds = [exists_amide_subset(n_atoms, [f"pb_{i}_{j}" for j in range(n_atoms)]) for i in
+                         range(n_amino_acids - 1)]
+        # aars do not overlap - each atom j only appears once (at most)
+        pairwise_inequality = [
+            qbf.BinaryFormula(f"aar_{i}_{j}", qbf.Connective.IMPLIES,
+                              qbf.NegFormula(qbf.NaryFormula(qbf.Connective.OR, [
+                                  f"aar_{k}_{j}" for k in range(n_amino_acids) if k != i])))
+            for i in range(n_amino_acids - 1) for j in range(n_atoms)]
+        # peptide bond i overlaps aar i+1
+        bond_peptide_overlaps = [
+            qbf.NaryFormula(qbf.Connective.OR, [
+                qbf.BinaryFormula(f"pb_{i}_{j}", qbf.Connective.AND, f"aar_{i + 1}_{j}")
+                for j in range(n_atoms)
+            ])
+            for i in range(n_amino_acids - 1)
+        ]
+        # peptide bond i overlaps aar <= i
+        # atom j from aar i+1 and atom l from aar k<i+1 have to be part of an amide bond
+        # for any j, j belongs to aar i and for any l, j and l belong to an amide bond and j belongs to any aar < i
+        peptide_bond_overlaps = [
+            qbf.NaryFormula(qbf.Connective.OR, [
+                qbf.NaryFormula(qbf.Connective.AND, [
+                    f"aar_{i}_{j}",
+                    qbf.NaryFormula(qbf.Connective.OR, [
+                        qbf.NaryFormula(qbf.Connective.AND, [
+                            qbf.BinaryFormula(exists_amide_given_n_c(n_atoms, j, l), qbf.Connective.OR,
+                                              exists_amide_given_n_c(n_atoms, l, j)),
+                            qbf.NaryFormula(qbf.Connective.OR, [f"aar_{k}_{l}" for k in range(i + 1)])
+                        ])
+                        for l in range(n_atoms)
+                    ])
+                ])
+                for j in range(n_atoms)
+            ])
+            for i in range(1, n_amino_acids)
+        ]
+
+        return qbf.QuantifiedFormula(
+            qbf.Quantifier.E,
+            [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)],
+            qbf.NaryFormula(qbf.Connective.AND, [
+                *amino_acids,
+                *pairwise_inequality,
+                *peptide_bond_overlaps
+            ])
+        )
+
     def get_peptide_structure(self, n_aars, n_atoms):
         if n_aars not in self._peptide_structures:
-            self._peptide_structures[n_aars] = {n_atoms: build_peptide_structure(n_aars, n_atoms)}
+            self._peptide_structures[n_aars] = {n_atoms: self.build_peptide_structure(n_aars, n_atoms)}
         elif n_atoms not in self._peptide_structures[n_aars]:
-            self._peptide_structures[n_aars][n_atoms] = build_peptide_structure(n_aars, n_atoms)
+            self._peptide_structures[n_aars][n_atoms] = self.build_peptide_structure(n_aars, n_atoms)
         return self._peptide_structures[n_aars][n_atoms]
 
     def solve_qdimacs(self, qdimacs):
@@ -62,54 +116,30 @@ class QBFPeptideSizeClassifierDepQBF(QBFPeptideSizeClassifierCAQE):
         return qbf_solver_depqbf(qdimacs)
 
 
-def build_peptide_structure(n_amino_acids, n_atoms):
-    # get qbf formula for peptide structure
-    amino_acids = [amino_acid_residue(n_atoms, [f"aar_{i}_{j}" for j in range(n_atoms)]) for i in range(n_amino_acids)]
-    peptide_bonds = [exists_amide_subset(n_atoms, [f"pb_{i}_{j}" for j in range(n_atoms)]) for i in
-                     range(n_amino_acids - 1)]
-    # aars do not overlap - each atom j only appears once (at most)
-    pairwise_inequality = [
-        qbf.BinaryFormula(f"aar_{i}_{j}", qbf.Connective.IMPLIES, qbf.NegFormula(qbf.NaryFormula(qbf.Connective.OR, [
-            f"aar_{k}_{j}" for k in range(n_amino_acids) if k != i])))
-        for i in range(n_amino_acids - 1) for j in range(n_atoms)]
-    # peptide bond i overlaps aar i+1
-    bond_peptide_overlaps = [
-        qbf.NaryFormula(qbf.Connective.OR, [
-            qbf.BinaryFormula(f"pb_{i}_{j}", qbf.Connective.AND, f"aar_{i + 1}_{j}")
-            for j in range(n_atoms)
-        ])
-        for i in range(n_amino_acids - 1)
-    ]
-    # peptide bond i overlaps aar <= i
-    # atom j from aar i+1 and atom l from aar k<i+1 have to be part of an amide bond
-    # for any j, j belongs to aar i and for any l, j and l belong to an amide bond and j belongs to any aar < i
-    peptide_bond_overlaps = [
-        qbf.NaryFormula(qbf.Connective.OR, [
-            qbf.NaryFormula(qbf.Connective.AND, [
-                f"aar_{i}_{j}",
-                qbf.NaryFormula(qbf.Connective.OR, [
-                    qbf.NaryFormula(qbf.Connective.AND, [
-                        qbf.BinaryFormula(exists_amide_given_n_c(n_atoms, j, l), qbf.Connective.OR,
-                                          exists_amide_given_n_c(n_atoms, l, j)),
-                        qbf.NaryFormula(qbf.Connective.OR, [f"aar_{k}_{l}" for k in range(i + 1)])
-                    ])
-                    for l in range(n_atoms)
-                ])
-            ])
-            for j in range(n_atoms)
-        ])
-        for i in range(1, n_amino_acids)
-    ]
+class QBFPeptideSizeClassifierDepQBFTranslated(QBFPeptideSizeClassifierDepQBF):
 
-    return qbf.QuantifiedFormula(
-        qbf.Quantifier.E,
-        [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)],
-        qbf.NaryFormula(qbf.Connective.AND, [
-            *amino_acids,
-            *pairwise_inequality,
-            *peptide_bond_overlaps
-        ])
-    )
+    def __init__(self):
+        super().__init__()
+        self._peptide_structures = dict()
+        self.peptide_definitions = {
+            peptide_size.HasOverlap().name(): peptide_size.HasOverlap(),
+            peptide_size.IsConnected().name(): peptide_size.IsConnected(),
+            peptide_size.CarbonConnected().name(): peptide_size.CarbonConnected(),
+            peptide_size.CarbonFragment().name(): peptide_size.CarbonFragment(),
+            peptide_size.AmideBond().name(): peptide_size.AmideBond(),
+            peptide_size.AmideBondFO().name(): peptide_size.AmideBondFO(),
+            peptide_size.AminoGroup().name(): peptide_size.AminoGroup(),
+            peptide_size.AminoGroupFO().name(): peptide_size.AminoGroupFO(),
+            peptide_size.CarboxyResidue().name(): peptide_size.CarboxyResidue(),
+            peptide_size.CarboxyResidueFO().name(): peptide_size.CarboxyResidueFO(),
+            peptide_size.BuildingBlock().name(): peptide_size.BuildingBlock(),
+            peptide_size.AAR().name(): peptide_size.AAR()
+        }
+
+    def build_peptide_structure(self, n_amino_acids, n_atoms):
+        peptide_msol = peptide_size.Peptide(n_amino_acids)
+        translator = QBFTranslator(n_atoms, self.peptide_definitions)
+        return translator.visit(peptide_msol())
 
 
 def exists_amino(n_atoms, x_vars):
@@ -413,5 +443,9 @@ if __name__ == "__main__":
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    #print(classifier.classify(Chem.MolFromSmiles(piperazine)))
+    print(classifier.build_peptide_structure(1, 2))
+    print("\n\n")
     classifier = QBFPeptideSizeClassifierDepQBF()
-    print(classifier.classify(Chem.MolFromSmiles("ON1C(CS)C(C[C@H]1C(=O)NCC(O)=O)c1ccc2OCOc2c1")))
+    print(classifier.build_peptide_structure(1, 2))

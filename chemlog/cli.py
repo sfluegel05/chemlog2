@@ -30,7 +30,8 @@ from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassif
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 from chemlog.preprocessing.pubchem_data import PubChemData
-from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifierDepQBF, QBFPeptideSizeClassifierCAQE
+from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifierDepQBF, QBFPeptideSizeClassifierCAQE, \
+    QBFPeptideSizeClassifierDepQBFTranslated
 from chemlog.timestamped_logger import TimestampedLogger
 
 
@@ -209,6 +210,9 @@ CLASSIFIERS = {
     },
     'qbf-depqbf': {
         ClassifierKeys.SIZE: QBFPeptideSizeClassifierDepQBF,
+    },
+    'qbf-depqbf-translated': {
+        ClassifierKeys.SIZE: QBFPeptideSizeClassifierDepQBFTranslated,
     },
     'fol': {
         ClassifierKeys.CHARGE: ChargeVerifier,
