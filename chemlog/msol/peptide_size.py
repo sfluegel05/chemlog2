@@ -68,7 +68,7 @@ class CarbonConnected(MSOLDefinition):
     @staticmethod
     def __call__(x: msol.Var2) -> msol.QuantifiedFormula:
         # pred CarbonConnected(var2 X) = X sub C & IsConnected(X);
-        return msol.SetSetFormula(x, msol.SetSetOperator.SUBSET, msol.Var2("C")) & msol.PredicateExpression(IsConnected().name(), [x])
+        return msol.SetSetFormula(x, msol.SetSetOperator.SUBSET_EQ, msol.Var2("C")) & msol.PredicateExpression(IsConnected().name(), [x])
 
 
 class CarbonFragment(MSOLDefinition):
