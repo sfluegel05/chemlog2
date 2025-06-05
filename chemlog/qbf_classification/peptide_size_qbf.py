@@ -1,5 +1,4 @@
 import logging
-import os
 
 from rdkit import Chem
 
@@ -10,6 +9,7 @@ from chemlog.qbf_classification import qbf
 from chemlog.qbf_classification.qbf_solver import qbf_solver_depqbf, qbf_solver_caqe
 from chemlog.msol import peptide_size
 from chemlog.qbf_classification.qbf_translator import QBFTranslator
+from chemlog.qbf_classification.qbf_utils import qbf_to_cnf, cnf_to_qdimacs
 
 
 class QBFPeptideSizeClassifierCAQE(Classifier):
@@ -98,7 +98,7 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
                 target_formula
             )
             dimacs.append(
-                qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(formula, use_tseytin=True, verbose=False), add_comments=False))
+                cnf_to_qdimacs(qbf_to_cnf(formula, use_tseytin=True, verbose=False), add_comments=False))
 
             outcome = self.solve_qdimacs(dimacs)
             proof_attempts.append(
@@ -443,9 +443,6 @@ if __name__ == "__main__":
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
-    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
-    #print(classifier.classify(Chem.MolFromSmiles(piperazine)))
-    print(classifier.build_peptide_structure(1, 2))
-    print("\n\n")
     classifier = QBFPeptideSizeClassifierDepQBF()
-    print(classifier.build_peptide_structure(1, 2))
+    print(classifier.classify(Chem.MolFromSmiles(piperazine)))
+
