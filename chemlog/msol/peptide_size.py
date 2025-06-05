@@ -331,7 +331,7 @@ if __name__ == "__main__":
     print(deff.name())
     f = deff(msol.Var2("X"))
     print(f)
-    from chemlog.msol_classification.mona_compiler import MONACompiler
+    from chemlog.mona_classification.mona_compiler import MONACompiler
 
     compiler = MONACompiler()
     print(f"MONA translation: {compiler.visit(f)}")

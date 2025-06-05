@@ -1,10 +1,11 @@
 import os
+from inspect import signature
 
 from chemlog.base_classifier import Classifier
 from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 from chemlog.msol import msol
-from chemlog.msol_classification.mona_compiler import MONACompiler
-from chemlog.msol_classification.mona_model_checker import MonaModelChecker
+from chemlog.mona_classification.mona_compiler import MONACompiler
+from chemlog.mona_classification.mona_model_checker import MonaModelChecker
 from chemlog.preprocessing.mol_to_msol import mol_to_msol
 
 
@@ -88,14 +89,16 @@ class MonaPeptideSizeClassifierCompiled(MonaPeptideSizeClassifier):
         from chemlog.msol import peptide_size
         defs_compiled = []
         for definition in [peptide_size.HasOverlap(), peptide_size.IsConnected(), peptide_size.CarbonConnected(),
-                           peptide_size.CarbonFragment(), peptide_size.AmideBond(), peptide_size.AminoGroup(),
+                           peptide_size.CarbonFragment(), peptide_size.AmideBondFO(), peptide_size.AmideBond(),
+                           peptide_size.AminoGroupFO(), peptide_size.AminoGroup(), peptide_size.CarboxyResidueFO(),
                            peptide_size.CarboxyResidue(), peptide_size.BuildingBlock(), peptide_size.AAR()]:
-            variables = [msol.Var2("X")]
-            if isinstance(definition, peptide_size.HasOverlap):
-                variables.append(msol.Var2("Y"))
+            sig = signature(definition.__call__)
+            variables = []
+            for p_name, param in sig.parameters.items():
+                variables.append(param.annotation(param.name))
             defs_compiled.append((definition.name(), variables, self.compiler.visit(definition(*variables))))
 
-        return "".join([f"pred {name}({', '.join(f"var2 {self.compiler.visit(var)}" for var in vs)}) = {formula};\n" for name, vs, formula in defs_compiled])
+        return "".join([f"pred {name}({', '.join(f"var{2 if isinstance(var, msol.Var2) else 1} {self.compiler.visit(var)}" for var in vs)}) = {formula};\n" for name, vs, formula in defs_compiled])
 
     def build_peptide_structure(self, n):
         # build peptide structure using the internal MSOL representation

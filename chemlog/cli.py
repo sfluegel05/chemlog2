@@ -26,7 +26,7 @@ from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier
 from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
 from chemlog.fol_classification.substruct_verifier import SubstructVerifier
-from chemlog.msol_classification.peptide_size_mona import MonaPeptideSizeClassifier, MonaPeptideSizeClassifierCompiled
+from chemlog.mona_classification.peptide_size_mona import MonaPeptideSizeClassifier, MonaPeptideSizeClassifierCompiled
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 from chemlog.preprocessing.pubchem_data import PubChemData
