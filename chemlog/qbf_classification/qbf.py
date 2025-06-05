@@ -75,9 +75,13 @@ class NegFormula(QBFExpression):
 class BinaryFormula(QBFExpression):
 
     def __init__(self, left, connective: Connective, right):
-        self.left = min(left, right)
         self.connective = connective
-        self.right = max(left, right)
+        if connective in [Connective.AND, Connective.OR]:
+            self.left = min(left, right)
+            self.right = max(left, right)
+        else:
+            self.left = left
+            self.right = right
 
     def __repr__(self):
         return f"({self.left} {repr(self.connective)} {self.right})"
