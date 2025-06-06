@@ -106,7 +106,7 @@ class QBFTranslator(msol.MSOLCompiler):
 
         elif isinstance(variable, msol.Var2):
             assert v2_index is not None, "v2_index must be provided for second-order variables."
-            return f"{variable.symbol}_{v2_index}"
+            return f"{v2_index}_{variable.symbol}"
         else:
             raise NotImplementedError(f"Variable {variable} has to be specified as first- or second-order.")
 
@@ -131,13 +131,16 @@ class QBFTranslator(msol.MSOLCompiler):
                         self.visit(msol.SetSetFormula(formula.left.right, msol.SetSetOperator.SUBSET_EQ, formula.right), var_indices=var_indices)
                     )
             elif isinstance(formula.right, msol.SetSetFunctorExpression):
-                # A \subseteq B union C = A \subseteq B | A \subseteq C
+                # A \subseteq B union C = a_i -> (b_i | c_i) for all i
                 if formula.right.operator == msol.SetSetFunctor.UNION:
-                    return qbf.BinaryFormula(
-                        self.visit(msol.SetSetFormula(formula.left, msol.SetSetOperator.SUBSET_EQ, formula.right.left), var_indices=var_indices),
-                        qbf.Connective.OR,
-                        self.visit(msol.SetSetFormula(formula.left, msol.SetSetOperator.SUBSET_EQ, formula.right.right), var_indices=var_indices)
-                    )
+                    return qbf.NaryFormula(qbf.Connective.AND, [
+                        qbf.BinaryFormula(
+                            self.visit(formula.left, v2_index=i),
+                            qbf.Connective.IMPLIES,
+                            qbf.BinaryFormula(self.visit(formula.right.left, v2_index=i), qbf.Connective.OR, self.visit(formula.right.right, v2_index=i))
+                        )
+                        for i in range(self.n_atoms)
+                    ])
             elif isinstance(formula.left, msol.SetOf) and isinstance(formula.right, msol.Var2):
                 # {i, j, k} \subseteq X = x_i & x_j & x_k
                 return qbf.NaryFormula(qbf.Connective.AND,
@@ -147,7 +150,7 @@ class QBFTranslator(msol.MSOLCompiler):
                 # X \subseteq {i, j, k} = ~x_l for all l not in {i, j, k}
                 return qbf.NaryFormula(qbf.Connective.AND, [NegFormula(self.visit(formula.left, v2_index=i))
                                                             for i in range(self.n_atoms) if
-                                                            i not in [self.visit(v, var_indices=var_indices) for v in formula.right.variables]])
+                                                            str(i) not in [self.visit(v, var_indices=var_indices) for v in formula.right.variables]])
             elif isinstance(formula.left, msol.Var2) and isinstance(formula.right, msol.Var2):
                 # X \subseteq Y = x_i -> y_i for all i
                 return qbf.NaryFormula(qbf.Connective.AND, [
@@ -190,7 +193,7 @@ if __name__ == '__main__':
 
     a = msol.Var2("A")
     b = msol.Var2("B")
-    x = msol.Var2("x")
+    x = msol.Var2("X")
     u, v = msol.Var1("u"), msol.Var1("v")
     t, w = msol.Var1("t"), msol.Var1("w")
     msol_formula = msol.QuantifiedFormula(
@@ -211,7 +214,8 @@ if __name__ == '__main__':
             )
         )
     ))
+    msol_formula3 = msol.SetSetFormula(msol.Var2("X"), msol.SetSetOperator.SET_EQ, msol.Var2("Y"))
 
-    translator = QBFTranslator(n_atoms=2)
-    qbf_formula = translator.visit(msol_formula)
+    translator = QBFTranslator(n_atoms=3)
+    qbf_formula = translator.visit(msol_formula3, var_indices={"a": 0})
     print(qbf_formula)
