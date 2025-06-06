@@ -91,10 +91,10 @@ def make_variables_unique(formula):
         nonlocal v_counter
         if isinstance(f, qbf.QuantifiedFormula):
             # rename variables to make them unique
-            for v in f.variables:
-                renamings[v] = f"x{v_counter}"
-                v_counter += 1
-            return qbf.QuantifiedFormula(f.quantifier, [renamings[v] for v in f.variables], _rename(f.formula, renamings))
+            v_counter += len(f.variables)
+            return qbf.QuantifiedFormula(f.quantifier, [f"x{v_counter - len(f.variables) + i}" for i, v in enumerate(f.variables)],
+                                         _rename(f.formula, {**renamings, **{v: f"x{v_counter - len(f.variables) + i}"
+                                                             for i, v in enumerate(f.variables)}}))
         elif isinstance(f, qbf.NegFormula):
             return qbf.NegFormula(_rename(f.formula, renamings))
         elif isinstance(f, qbf.BinaryFormula):
@@ -252,6 +252,8 @@ def qbf_to_cnf(formula, use_tseytin=True, verbose=False):
         print(f"Formula in NNF: {formula}")
     # formula is now in NNF without -> or <->
     formula = make_variables_unique(formula)
+    if verbose:
+        print(f"Formula with unique variables: {formula}")
     matrix, quantifiers = nnf_to_pnf(formula)
     if verbose:
         print(f"Matrix: {matrix}")
@@ -354,4 +356,7 @@ def demo():
     print(cnf_to_qdimacs(qbf_to_cnf(unsat_formula, verbose=False)))
 
 if __name__ == '__main__':
-    print(matrix_to_cnf_distributivity("x0"))
+    #print(matrix_to_cnf_distributivity("x0"))
+    f = qbf.QuantifiedFormula(qbf.Quantifier.E, ["0_Y"], qbf.BinaryFormula(qbf.QuantifiedFormula(qbf.Quantifier.E, ["0_Y"], "0_Y"), qbf.Connective.AND, "0_Y"))
+    print(f)
+    print(make_variables_unique(qbf_to_nnf(f)))
