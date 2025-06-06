@@ -13,7 +13,7 @@ def get_h_count_pvar(atom_index: int, h_count: int):
     return f"{atom_index}_has{h_count}Hs"
 
 def get_bond_pvar(left_index: int, right_index: int):
-    return f"{left_index}_{right_index}_bond"
+    return f"{left_index}_{right_index}_has_bond_to"
 
 def get_bond_type_pvar(left_index: int, right_index: int, bond_type: Chem.BondType):
     return f"{left_index}_{right_index}_b{str(bond_type).split('.')[-1]}"
