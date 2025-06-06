@@ -98,7 +98,12 @@ class MonaPeptideSizeClassifierCompiled(MonaPeptideSizeClassifier):
                 variables.append(param.annotation(param.name))
             defs_compiled.append((definition.name(), variables, self.compiler.visit(definition(*variables))))
 
-        return "".join([f"pred {name}({', '.join(f"var{2 if isinstance(var, msol.Var2) else 1} {self.compiler.visit(var)}" for var in vs)}) = {formula};\n" for name, vs, formula in defs_compiled])
+        mona_str = ""
+        for name, vs, formula in defs_compiled:
+            args = ', '.join(f"var{2 if isinstance(var, msol.Var2) else 1} {self.compiler.visit(var)}" for var in vs)
+            mona_str += f"pred {name}({args}) = {formula};\n"
+
+        return mona_str
 
     def build_peptide_structure(self, n):
         # build peptide structure using the internal MSOL representation
