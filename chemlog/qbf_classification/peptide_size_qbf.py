@@ -7,7 +7,7 @@ from chemlog.preprocessing.mol_to_qbf import mol_to_propositional, get_atom_pvar
     get_bond_pvar, get_bond_type_pvar
 from chemlog.qbf_classification import qbf
 from chemlog.qbf_classification.qbf_solver import qbf_solver_depqbf, qbf_solver_caqe
-from chemlog.msol import peptide_size
+from chemlog.msol import peptide_size, msol
 from chemlog.qbf_classification.qbf_translator import QBFTranslator
 from chemlog.qbf_classification.qbf_utils import qbf_to_cnf, cnf_to_qdimacs
 
@@ -356,42 +356,117 @@ def amino_acid_residue(n_atoms: int, x_vars):
 
 def amino_example(smiles):
     mol = Chem.MolFromSmiles(smiles)
-    # mol = Chem.MolFromSmiles("O=C1CNC(=O)CN1") # CHEBI:16535
-    amino_formula = exists_amino(mol.GetNumAtoms(), [f"x{i}" for i in range(mol.GetNumAtoms())])
-    print("c \\exists A: Amino(A) & A \\subseteq X")
+    x_vars = [f"x{i}" for i in range(mol.GetNumAtoms())]
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
+    formula = translator.visit(msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [msol.Var2("X")],
+                                                      peptide_size.AminoGroup()(msol.Var2("X"))))
+    dimacs = ["c \\exists X: Amino(X)"]
+    dimacs.append(f"c Target formula: {formula}")
 
     # add molecule to qbf
     mol_prop = mol_to_propositional(mol)
     mol_formula = qbf.NaryFormula(qbf.Connective.AND,
                                   [v for v in mol_prop[0]] + [qbf.NegFormula(v) for v in mol_prop[1]])
-    all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, amino_formula)
-    print(f"c Molecule description: {mol_formula}")
-    print(f"c Dimacs for molecule")
-    print(qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(all_formula)))
+    all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
+    dimacs.append(f"c Molecule SMILES: {smiles}")
+    dimacs.append(f"c Molecule description: {mol_formula}")
+    dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
+    with open(f"qdimacs_demo/amino_example_{smiles}.qdimacs",
+              "w", encoding="utf-8") as f:
+        f.write("\n".join(dimacs))
+    print(f"SAT?", qbf_solver_depqbf(dimacs))
 
 
 def carboxy_example(smiles):
     mol = Chem.MolFromSmiles(smiles)
-    carboxy_formula = exists_carboxy(mol.GetNumAtoms(), [f"x{i}" for i in range(mol.GetNumAtoms())])
-    dimacs = ["c \\exists C: Carboxy(C) & C \\subseteq X"]
+    x_vars = [f"x{i}" for i in range(mol.GetNumAtoms())]
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
+    formula = translator.visit(msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [msol.Var2("X")],
+                                                      peptide_size.CarboxyResidue()(msol.Var2("X"))))
+    dimacs = ["c \\exists X: Carboxy(X)"]
+    dimacs.append(f"c Target formula: {formula}")
 
     # add molecule to qbf
     mol_prop = mol_to_propositional(mol)
     mol_formula = qbf.NaryFormula(qbf.Connective.AND,
                                   [v for v in mol_prop[0]] + [qbf.NegFormula(v) for v in mol_prop[1]])
-    all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, carboxy_formula)
+    all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
+    dimacs.append(f"c Molecule SMILES: {smiles}")
     dimacs.append(f"c Molecule description: {mol_formula}")
-    print(dimacs)
-    dimacs.append(qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(all_formula)))
-    with open(r"C:\Users\sifluegel\Downloads\depqbf-version-6.03\depqbf-version-6.03\peptides\carboxy_example.qdimacs",
-              "w") as f:
-        f.writelines(dimacs)
+    dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
+    with open(f"qdimacs_demo/carboxy_example_{smiles}.qdimacs",
+              "w", encoding="utf-8") as f:
+        f.write("\n".join(dimacs))
+    print(f"SAT?", qbf_solver_depqbf(dimacs))
+
+def amide_example(smiles):
+    mol = Chem.MolFromSmiles(smiles)
+    x_vars = [f"x{i}" for i in range(mol.GetNumAtoms())]
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
+    formula = translator.visit(msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [msol.Var2("X")],
+                                                      peptide_size.AmideBond()(msol.Var2("X"))))
+    dimacs = ["c \\exists X: AmideBond(X)"]
+    dimacs.append(f"c Target formula: {formula}")
+
+    # add molecule to qbf
+    mol_prop = mol_to_propositional(mol)
+    mol_formula = qbf.NaryFormula(qbf.Connective.AND,
+                                  [v for v in mol_prop[0]] + [qbf.NegFormula(v) for v in mol_prop[1]])
+    all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
+    dimacs.append(f"c Molecule SMILES: {smiles}")
+    dimacs.append(f"c Molecule description: {mol_formula}")
+    dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
+    with open(f"qdimacs_demo/amide_example_{smiles}.qdimacs",
+              "w", encoding="utf-8") as f:
+        f.write("\n".join(dimacs))
+    print(f"SAT?", qbf_solver_depqbf(dimacs))
+
+def building_block_example(smiles):
+    mol = Chem.MolFromSmiles(smiles)
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
+    y = msol.Var2("Y")
+    x = msol.Var2("X")
+    u = msol.Var1("uuu")
+    v = msol.Var1("vvv")
+    w = msol.Var1("www")
+    a_o = msol.Var1("a_o")
+    bb = msol.QuantifiedFormula(
+            msol.Quantifier.EXISTENTIAL, [x],
+            peptide_size.BuildingBlock()(x))
+    for u_index in [0]:# range(mol.GetNumAtoms()): #[0, 3, 4, 5, 6, 7]:
+        v_index = u_index + 1
+        #print(f"Setting u to {u_index}, v to {v_index}")
+        formula = translator.visit(bb) #var_indices={"uuu": u_index, "vvv": v_index})
+        dimacs = ["c \\exists X: BuildingBlock(X)"]
+        dimacs.append(f"c Target formula: {formula}")
+        print(f"Target formula: {formula}")
+
+        # add molecule to qbf
+        mol_prop = mol_to_propositional(mol)
+        print(f"Molecule properties: {mol_prop}")
+        mol_formula = qbf.NaryFormula(qbf.Connective.AND,
+                                      [v for v in mol_prop[0]] + [qbf.NegFormula(v) for v in mol_prop[1]])
+        all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
+        dimacs.append(f"c Molecule SMILES: {smiles}")
+        dimacs.append(f"c Molecule description: {mol_formula}")
+        dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
+        with open(f"qdimacs_demo/building_block_example_{smiles}.qdimacs",
+                  "w", encoding="utf-8") as f:
+            f.write("\n".join(dimacs))
+        print(f"SAT?", qbf_solver_depqbf(dimacs))
 
 
 def aar_example(smiles):
     mol = Chem.MolFromSmiles(smiles)
     x_vars = [f"x{i}" for i in range(mol.GetNumAtoms())]
-    formula = qbf.QuantifiedFormula(qbf.Quantifier.E, x_vars, amino_acid_residue(mol.GetNumAtoms(), x_vars))
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
+    formula = translator.visit(msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [msol.Var2("X")],
+                                                      peptide_size.AAR()(msol.Var2("X"))))
     dimacs = ["c \\exists X: AAR(X)"]
     dimacs.append(f"c Target formula: {formula}")
 
@@ -402,17 +477,16 @@ def aar_example(smiles):
     all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
     dimacs.append(f"c Molecule SMILES: {smiles}")
     dimacs.append(f"c Molecule description: {mol_formula}")
-    print("\n".join(dimacs))
-    dimacs.append(qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(all_formula, use_tseytin=True, verbose=True), add_comments=False))
-    print(dimacs)
-    with open("qdimacs_demo/aar_example.qdimacs",
+    dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
+    with open(f"qdimacs_demo/aar_example_{smiles}.qdimacs",
               "w", encoding="utf-8") as f:
         f.write("\n".join(dimacs))
-
+    print(f"SAT?", qbf_solver_depqbf(dimacs))
 
 def di_plus_peptide_example(smiles):
     mol = Chem.MolFromSmiles(smiles)
-    formula = build_peptide_structure(2, mol.GetNumAtoms())
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    formula = classifier.build_peptide_structure(2, mol.GetNumAtoms())
     dimacs = ["c \\exists X, Y: AAR(X) & AAR(Y) & X \\cap Y = \\emptyset"]
     dimacs.append(f"c Target formula: {formula}")
 
@@ -422,11 +496,10 @@ def di_plus_peptide_example(smiles):
                                   [v for v in mol_prop[0]] + [qbf.NegFormula(v) for v in mol_prop[1]])
     all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
     dimacs.append(f"c Molecule SMILES: {smiles}")
-    print("\n".join(dimacs))
 
     dimacs.append(f"c Molecule description: {mol_formula}")
-    dimacs.append(qbf.cnf_to_qdimacs(qbf.qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
-    with open("qdimacs_demo/di_plus_example.qdimacs",
+    dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
+    with open(f"qdimacs_demo/di_plus_example_{smiles}.qdimacs",
               "w", encoding="utf-8") as f:
         f.write("\n".join(dimacs))
     print(f"SAT?", qbf_solver_depqbf(dimacs))
@@ -443,6 +516,7 @@ if __name__ == "__main__":
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
-    classifier = QBFPeptideSizeClassifierDepQBF()
-    print(classifier.classify(Chem.MolFromSmiles(piperazine)))
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    #aar_example(smiles_no_peptide)
+    print(classifier.classify(Chem.MolFromSmiles(smiles_no_peptide2)))
 
