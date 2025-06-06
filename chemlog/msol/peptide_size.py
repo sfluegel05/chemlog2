@@ -47,8 +47,12 @@ class IsConnected(MSOLDefinition):
         return msol.QuantifiedFormula(
             msol.Quantifier.UNIVERSAL, [a, b],
             msol.BinaryFormula(
+                # A and B are not empty
                 msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [u], msol.InSetFormula(u, a))
                 & msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [v], msol.InSetFormula(v, b))
+                # A != B
+                & msol.SetSetFormula(a, msol.SetSetOperator.SET_NEQ, b)
+                # A union B = X
                 & msol.SetSetFormula(msol.SetSetFunctorExpression(a, msol.SetSetFunctor.UNION, b),
                                      msol.SetSetOperator.SET_EQ, x),
                 msol.BinaryConnective.IMPLICATION,
@@ -228,7 +232,7 @@ class BuildingBlock(MSOLDefinition):
         return msol.QuantifiedFormula(
             msol.Quantifier.EXISTENTIAL, [y],
             msol.PredicateExpression(CarbonFragment().name(), [y]) &
-            msol.SetSetFormula(y, msol.SetSetOperator.SUBSET, x) &
+            msol.SetSetFormula(y, msol.SetSetOperator.SUBSET_EQ, x) &
             msol.QuantifiedFormula(
                 msol.Quantifier.UNIVERSAL, [u],
                 msol.BinaryFormula(
