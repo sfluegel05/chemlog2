@@ -1,6 +1,7 @@
 import logging
 import os
 import pickle
+from copy import deepcopy
 
 from rdkit import Chem
 
@@ -16,8 +17,11 @@ from chemlog.qbf_classification.qbf_utils import qbf_to_cnf, cnf_to_qdimacs
 
 class QBFPeptideSizeClassifierCAQE(Classifier):
 
-    def __init__(self):
-        self._peptide_formulas = self.load_peptide_formulas()
+    def __init__(self, load_formulas=True, *args, **kwargs):
+        if load_formulas:
+            self._peptide_formulas = self.load_peptide_formulas()
+        else:
+            self._peptide_formulas = dict()
         if len(self._peptide_formulas) > 0:
             logging.debug(f"Using {len(self._peptide_formulas)} pre-calculated peptide formulas")
 
@@ -95,7 +99,7 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
             self._peptide_formulas[n_aars] = {n_atoms: qbf_to_cnf(self.build_peptide_structure(n_aars, n_atoms), use_tseytin=True, verbose=False)}
         elif n_atoms not in self._peptide_formulas[n_aars]:
             self._peptide_formulas[n_aars][n_atoms] = qbf_to_cnf(self.build_peptide_structure(n_aars, n_atoms), use_tseytin=True, verbose=False)
-        return self._peptide_formulas[n_aars][n_atoms]
+        return deepcopy(self._peptide_formulas[n_aars][n_atoms])
 
     def solve_qdimacs(self, qdimacs):
         return qbf_solver_caqe(qdimacs)
@@ -109,14 +113,12 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
             logging.debug(f"Running QBF for peptide size {n} with {n_atoms} atoms")
             target_formula = self.get_peptide_structure(n, n_atoms)
             dimacs = [f"c Peptide structure {n}+ ({n_atoms} atoms)"]
-            #target_formula_cnf
             # get matrix
             matrix = target_formula
             while isinstance(matrix, qbf.QuantifiedFormula):
                 matrix = matrix.formula
             assert isinstance(matrix, qbf.NaryFormula)
             matrix.formulas = matrix.formulas + [v for v in positive_literals] + [qbf.NegFormula(v) for v in negative_literals]
-            print(f"Matrix size: {len(matrix.formulas)}")
             dimacs.append(
                 cnf_to_qdimacs(target_formula, add_comments=False))
 
@@ -138,8 +140,8 @@ class QBFPeptideSizeClassifierDepQBF(QBFPeptideSizeClassifierCAQE):
 
 class QBFPeptideSizeClassifierDepQBFTranslated(QBFPeptideSizeClassifierDepQBF):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._peptide_structures = dict()
         self.peptide_definitions = {
             peptide_size.HasOverlap().name(): peptide_size.HasOverlap(),
@@ -537,7 +539,7 @@ if __name__ == "__main__":
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
-    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
+    classifier = QBFPeptideSizeClassifierDepQBFTranslated(load_formulas=True)
     #aar_example(smiles_no_peptide)
-    print(classifier.classify(Chem.MolFromSmiles("CN(CC(=O)O)C(=O)CN")))
+    print(classifier.classify(Chem.MolFromSmiles(glycylglycine)))
 
