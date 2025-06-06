@@ -1,4 +1,6 @@
 import logging
+import os
+import pickle
 
 from rdkit import Chem
 
@@ -15,7 +17,26 @@ from chemlog.qbf_classification.qbf_utils import qbf_to_cnf, cnf_to_qdimacs
 class QBFPeptideSizeClassifierCAQE(Classifier):
 
     def __init__(self):
-        self._peptide_structures = dict()
+        self._peptide_formulas = self.load_peptide_formulas()
+        if len(self._peptide_formulas) > 0:
+            logging.debug(f"Using {len(self._peptide_formulas)} pre-calculated peptide formulas")
+
+    @property
+    def peptide_formula_path(self):
+        return os.path.join("data", f"qbf_structures_{self.__class__.__name__}.pkl")
+
+    def load_peptide_formulas(self):
+        # load peptide structures from file or initialize empty dict
+        if os.path.isfile(self.peptide_formula_path):
+            logging.debug(f"Loading peptide formulas from {self.peptide_formula_path}")
+            with open(self.peptide_formula_path, "rb") as f:
+                return pickle.load(f)
+        return dict()
+
+    def on_finish(self):
+        # save peptide structures to file
+        with open(self.peptide_formula_path, "wb+") as f:
+            pickle.dump(self._peptide_formulas, f)
 
     @staticmethod
     def build_peptide_structure(n_amino_acids, n_atoms):
@@ -70,11 +91,11 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
         )
 
     def get_peptide_structure(self, n_aars, n_atoms):
-        if n_aars not in self._peptide_structures:
-            self._peptide_structures[n_aars] = {n_atoms: self.build_peptide_structure(n_aars, n_atoms)}
-        elif n_atoms not in self._peptide_structures[n_aars]:
-            self._peptide_structures[n_aars][n_atoms] = self.build_peptide_structure(n_aars, n_atoms)
-        return self._peptide_structures[n_aars][n_atoms]
+        if n_aars not in self._peptide_formulas:
+            self._peptide_formulas[n_aars] = {n_atoms: qbf_to_cnf(self.build_peptide_structure(n_aars, n_atoms), use_tseytin=True, verbose=False)}
+        elif n_atoms not in self._peptide_formulas[n_aars]:
+            self._peptide_formulas[n_aars][n_atoms] = qbf_to_cnf(self.build_peptide_structure(n_aars, n_atoms), use_tseytin=True, verbose=False)
+        return self._peptide_formulas[n_aars][n_atoms]
 
     def solve_qdimacs(self, qdimacs):
         return qbf_solver_caqe(qdimacs)
@@ -88,17 +109,16 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
             logging.debug(f"Running QBF for peptide size {n} with {n_atoms} atoms")
             target_formula = self.get_peptide_structure(n, n_atoms)
             dimacs = [f"c Peptide structure {n}+ ({n_atoms} atoms)"]
-
-            formula = qbf.BinaryFormula(
-                qbf.NaryFormula(
-                    qbf.Connective.AND,
-                    [v for v in positive_literals] + [qbf.NegFormula(v) for v in negative_literals]
-                ),
-                qbf.Connective.AND,
-                target_formula
-            )
+            #target_formula_cnf
+            # get matrix
+            matrix = target_formula
+            while isinstance(matrix, qbf.QuantifiedFormula):
+                matrix = matrix.formula
+            assert isinstance(matrix, qbf.NaryFormula)
+            matrix.formulas = matrix.formulas + [v for v in positive_literals] + [qbf.NegFormula(v) for v in negative_literals]
+            print(f"Matrix size: {len(matrix.formulas)}")
             dimacs.append(
-                cnf_to_qdimacs(qbf_to_cnf(formula, use_tseytin=True, verbose=False), add_comments=False))
+                cnf_to_qdimacs(target_formula, add_comments=False))
 
             outcome = self.solve_qdimacs(dimacs)
             proof_attempts.append(
@@ -513,10 +533,11 @@ if __name__ == "__main__":
     piperazine = "O=C1CNC(=O)CN1"  # CHEBI:16535
     glycylglycine = "NCC(=O)NCC(=O)O"  # CHEBI:17201
     n_acetyl_methionyl_isoleucine = "CC[C@H](C)[C@H](NC(=O)[C@H](CCSC)NC(C)=O)C(=O)O"  # CHEBI:134478
+    methyl_piperazine = "O=C1NCC(=O)NC1C" # CHEBI:144050
     # tripeptide
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
     classifier = QBFPeptideSizeClassifierDepQBFTranslated()
     #aar_example(smiles_no_peptide)
-    print(classifier.classify(Chem.MolFromSmiles(smiles_no_peptide2)))
+    print(classifier.classify(Chem.MolFromSmiles("CN(CC(=O)O)C(=O)CN")))
 

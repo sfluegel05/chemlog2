@@ -272,7 +272,10 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
             results.append(strategy_call(strategy, classifier_instances, id, row))
             if len(data_filtered) < 100 or ((i+1) % (len(data_filtered) // 100)) == 0:
                 json_logger.save_items(f"classify_{strategy}", results)
+
         json_logger.save_items(f"classify_{strategy}", results)
+        for classifier in classifier_instances.values():
+            classifier.on_finish()
         return
 
     output_q = mp.Queue()
@@ -316,6 +319,8 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
 
     logging.info(f"Finished classifying {i}/{input_size} molecules")
     json_logger.save_items(f"classify_{strategy}", results)
+    for classifier in classifier_instances.values():
+        classifier.on_finish()
 
 
 def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False):

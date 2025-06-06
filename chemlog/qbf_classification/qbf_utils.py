@@ -5,6 +5,8 @@ from itertools import product
 from typing import List
 
 from chemlog.qbf_classification import qbf
+from chemlog.qbf_classification.qbf import NegFormula
+
 
 def qbf_to_nnf(formula):
     # eliminates -> and <-> from a QBF formula, converts it to NNF
@@ -305,15 +307,25 @@ def cnf_to_qdimacs(formula, add_comments=False):
     assert(isinstance(formula, qbf.NaryFormula) and formula.connective == qbf.Connective.AND)
     for clause in formula.formulas:
         variable_ints = []
-        assert(isinstance(clause, qbf.NaryFormula) and clause.connective == qbf.Connective.OR), f"Expected clause to be a disjunction, got {clause} (type: {type(clause)})"
-        for literal in clause.formulas:
-            negation = 1
-            if isinstance(literal, qbf.NegFormula):
-                negation = -1
-                literal = literal.formula
-            if literal not in variable_names:
-                variable_names[literal] = len(variable_names) + 1
-            variable_ints.append(negation * variable_names[literal])
+        if isinstance(clause, qbf.NaryFormula) and clause.connective == qbf.Connective.OR:
+            for literal in clause.formulas:
+                negation = 1
+                if isinstance(literal, qbf.NegFormula):
+                    negation = -1
+                    literal = literal.formula
+                if literal not in variable_names:
+                    variable_names[literal] = len(variable_names) + 1
+                variable_ints.append(negation * variable_names[literal])
+        elif isinstance(clause, NegFormula):
+            if clause.formula not in variable_names:
+                variable_names[clause.formula] = len(variable_names) + 1
+            variable_ints.append(-1 * variable_names[clause.formula])
+        elif isinstance(clause, str):
+            if clause not in variable_names:
+                variable_names[clause] = len(variable_names) + 1
+            variable_ints.append(variable_names[clause])
+        else:
+            raise NotImplementedError(f"Expected clause to be a disjunction, got {clause} (type: {type(clause)})")
         lines.append(" ".join([str(v) for v in variable_ints]) + " 0")
         if add_comments:
             comments.append(" ".join([str(v) for v in variable_ints]) + " 0  " + str(clause))

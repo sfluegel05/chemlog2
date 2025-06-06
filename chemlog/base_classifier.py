@@ -14,6 +14,9 @@ class Classifier(abc.ABC):
     def classify(self, mol: Chem.Mol, *args, **kwargs) -> (Any, Optional[dict]):
         pass
 
+    def on_finish(self):
+        pass
+
 
 class ChargeCategories(enum.Enum):
     ANION = auto()
