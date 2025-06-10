@@ -150,12 +150,12 @@ class AminoGroupFO(MSOLDefinition):
                         msol.PredicateExpression("has_bond_to", [a_n, a_x]),
                         msol.BinaryConnective.IMPLICATION,
                         msol.InSetFormula(a_x, msol.Var2("C")) & (
-                            msol.PredicateExpression("bSINGLE", [a_n, a_x]) |
-                            # this has been replaced with FO-version of AmideBond
-                            msol.QuantifiedFormula(
-                                msol.Quantifier.EXISTENTIAL, [a_o],
-                                msol.PredicateExpression(AmideBondFO().name(), [a_x, a_o, a_n])
-                            )
+                                msol.PredicateExpression("bSINGLE", [a_n, a_x]) |
+                                # this has been replaced with FO-version of AmideBond
+                                msol.QuantifiedFormula(
+                                    msol.Quantifier.EXISTENTIAL, [a_o],
+                                    msol.PredicateExpression(AmideBondFO().name(), [a_x, a_o, a_n])
+                                )
                         )
                     )
                 ))
@@ -177,6 +177,7 @@ class AminoGroup(MSOLDefinition):
             msol.PredicateExpression(AminoGroupFO().name(), [a_n])
         )
 
+
 class CarboxyResidueFO(MSOLDefinition):
 
     def name(self):
@@ -193,6 +194,7 @@ class CarboxyResidueFO(MSOLDefinition):
                 msol.PredicateExpression("bSINGLE", [a_c, a_s])
             ]
         )
+
 
 class CarboxyResidue(MSOLDefinition):
 
@@ -268,8 +270,6 @@ class AAR(MSOLDefinition):
     @staticmethod
     def __call__(x: msol.Var2):
         # pred AAR(var2 X) = BuildingBlock(X) & ex2 AG: ex2 CG: AminoGroup(AG) & CarboxyResidue(CG) & AG sub X & CG sub X;
-        #ag = msol.Var2("AG")
-        #cg = msol.Var2("CG")
         a_n = msol.Var1("a_n")
         a_c, a_o, a_s = msol.Var1("a_c"), msol.Var1("a_o"), msol.Var1("a_s")
         return msol.NaryFormula(msol.BinaryConnective.CONJUNCTION, [
@@ -281,17 +281,9 @@ class AAR(MSOLDefinition):
             msol.QuantifiedFormula(
                 msol.Quantifier.EXISTENTIAL, [a_c, a_o, a_s],
                 msol.NaryFormula(msol.BinaryConnective.CONJUNCTION, [
-                msol.PredicateExpression(CarboxyResidueFO().name(), [a_c, a_o, a_s]),
-                msol.InSetFormula(a_c, x), msol.InSetFormula(a_o, x), msol.InSetFormula(a_s, x)]))
-            #msol.QuantifiedFormula(
-            #    msol.Quantifier.EXISTENTIAL, [ag],
-            #    msol.PredicateExpression(AminoGroup().name(), [ag]) &
-            #    msol.SetSetFormula(ag, msol.SetSetOperator.SUBSET_EQ, x)),
-            #msol.QuantifiedFormula(
-            #    msol.Quantifier.EXISTENTIAL, [cg],
-            #    msol.PredicateExpression(CarboxyResidue().name(), [cg]) &
-            #    msol.SetSetFormula(cg, msol.SetSetOperator.SUBSET_EQ, x))
-        ])
+                    msol.PredicateExpression(CarboxyResidueFO().name(), [a_c, a_o, a_s]),
+                    msol.InSetFormula(a_c, x), msol.InSetFormula(a_o, x), msol.InSetFormula(a_s, x)]))
+         ])
 
 
 class Peptide(MSOLDefinition):
@@ -304,27 +296,35 @@ class Peptide(MSOLDefinition):
 
     def __call__(self) -> msol.QuantifiedFormula:
         aars = [msol.Var2(f"A{i}") for i in range(self.n_amino_acid_residues)]
-        bonds = [msol.Var2(f"B{i}") for i in range(self.n_amino_acid_residues - 1)]
+        bond_starts = [msol.Var1(f"b{i}a") for i in range(self.n_amino_acid_residues - 1)]
+        bond_os = [msol.Var1(f"b{i}o") for i in range(self.n_amino_acid_residues - 1)]
+        bond_ends = [msol.Var1(f"b{i}b") for i in range(self.n_amino_acid_residues - 1)]
         return msol.QuantifiedFormula(
-            msol.Quantifier.EXISTENTIAL, aars + bonds,
-            msol.NaryFormula(
-                msol.BinaryConnective.CONJUNCTION,
-                # AAR(a_i)
-                [msol.PredicateExpression(AAR().name(), [aars[i]]) for i in range(self.n_amino_acid_residues)]
-                # ~HasOverlap(a_i, a_j) for i < j
-                + [~msol.PredicateExpression(HasOverlap().name(), [aars[i], aars[j]])
-                   for i in range(self.n_amino_acid_residues - 1) for j in range(i + 1, self.n_amino_acid_residues)]
-                # TODO replace with QBF improved version (FO-AmideBond)
-                # AmideBond(b_i)
-                + [msol.PredicateExpression(AmideBond().name(), [bonds[i]]) for i in
-                   range(self.n_amino_acid_residues - 1)]
-                # HasOverlap(b_i, a_{i+1})
-                + [msol.PredicateExpression(HasOverlap().name(), [bonds[i], aars[i + 1]])
-                   for i in range(self.n_amino_acid_residues - 1)]
-                # HasOverlap(b_i, a_j) for some j <= i
-                + [msol.NaryFormula(msol.BinaryConnective.DISJUNCTION,
-                                    [msol.PredicateExpression(HasOverlap().name(), [bonds[i], aars[j]])
-                                     for j in range(i + 1)]) for i in range(self.n_amino_acid_residues - 1)]
+            msol.Quantifier.EXISTENTIAL, aars,
+            msol.QuantifiedFormula(
+                msol.Quantifier.EXISTENTIAL, bond_starts + bond_os + bond_ends,
+                msol.NaryFormula(
+                    msol.BinaryConnective.CONJUNCTION,
+                    # AAR(a_i)
+                    [msol.PredicateExpression(AAR().name(), [aars[i]]) for i in
+                     range(self.n_amino_acid_residues)]
+                    # ~HasOverlap(a_i, a_j) for i < j
+                    + [~msol.PredicateExpression(HasOverlap().name(), [aars[i], aars[j]])
+                       for i in range(self.n_amino_acid_residues - 1) for j in
+                       range(i + 1, self.n_amino_acid_residues)]
+                    # AmideBondFO(b_a, b_o, b_b) or AmideBondFO(b_b, b_o, b_a)
+                    + [msol.PredicateExpression(AmideBondFO().name(),[bond_starts[i], bond_os[i], bond_ends[i]])
+                       | msol.PredicateExpression(AmideBondFO().name(), [bond_ends[i], bond_os[i], bond_starts[i]])
+                       for i in range(self.n_amino_acid_residues - 1)]
+                    # b_a in a_{i+1}
+                    + [msol.InSetFormula(bond_starts[i], aars[i + 1]) for i in
+                       range(self.n_amino_acid_residues - 1)]
+                    # b_b in a_j for some j <= i
+                    + [msol.NaryFormula(
+                        msol.BinaryConnective.DISJUNCTION,
+                        [msol.InSetFormula(bond_ends[i], aars[j])
+                         for j in range(i + 1)]) for i in range(self.n_amino_acid_residues - 1)]
+                )
             )
         )
 
