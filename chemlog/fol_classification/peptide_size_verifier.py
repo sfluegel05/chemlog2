@@ -18,7 +18,7 @@ class PeptideSizeVerifier(Classifier):
     def __init__(self):
         self.structure_formulas = self.get_structure_formulas()
         logging.debug(f"Loaded {len(self.structure_formulas)} peptide structure formulas:")
-        logging.debug(f"{'\n'.join([f'{k}: {v}' for k, v in self.structure_formulas.items()])}")
+        logging.debug('\n'.join([f'{k}: {v}' for k, v in self.structure_formulas.items()]))
 
     @staticmethod
     def get_fol_structure(mol: Chem.Mol, functional_groups=None):
