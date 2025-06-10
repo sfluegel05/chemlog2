@@ -8,8 +8,7 @@ from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 from gavel.logic import logic
-from gavel.logic.logic import NaryFormula
-from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula, binary_to_nary
+from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula, convert_to_nnf, convert_to_cnf
 
 
 class ModelCheckerOutcome(Enum):
@@ -205,7 +204,88 @@ class ModelChecker(AbstractModelChecker):
             f" and connective: {literal.connective == logic.UnaryConnective.NEGATION}"
         )
 
-    def find_model(
+
+    def nnf_to_pnf(self, formula):
+        # assume formula in NNF without -> or <->
+        # separate quantifiers from matrix
+        quantifiers = []
+        if isinstance(formula, logic.QuantifiedFormula):
+            quantifiers.append((formula.quantifier, formula.variables))
+            formula, qs = self.nnf_to_pnf(formula.formula)
+            quantifiers += qs
+        elif isinstance(formula, logic.UnaryFormula):
+            pass
+        elif isinstance(formula, logic.BinaryFormula):
+            formula.left, qs_left = self.nnf_to_pnf(formula.left)
+            formula.right, qs_right = self.nnf_to_pnf(formula.right)
+            quantifiers += qs_left + qs_right
+        elif isinstance(formula, logic.NaryFormula):
+            f_qs = [self.nnf_to_pnf(f) for f in formula.formulae]
+            formula.formulae = [f for f, _ in f_qs]
+            quantifiers += [q for _, qs in f_qs for q in qs]
+        else:
+            pass
+
+        return formula, quantifiers
+
+    def find_model(self, formula, timeout=30) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
+        """Converts formula to PNF, CNF, then applies model checking for every quantifier"""
+        nnf_formula = convert_to_nnf(deepcopy(formula))
+        pnf_matrix, quantifiers = self.nnf_to_pnf(nnf_formula)
+        cnf_matrix = convert_to_cnf(pnf_matrix)
+
+        if len(quantifiers) == 0:
+            return self.find_model_existential(logic.QuantifiedFormula(logic.Quantifier.EXISTENTIAL, [], cnf_matrix), timeout)
+        curr_quantifier, curr_variables = quantifiers[-1]
+        if len(quantifiers) > 1:
+            quantifiers.reverse()
+            for q, vs in quantifiers[1:]:
+                if q == curr_quantifier:
+                    curr_variables = vs + curr_variables
+                else:
+                    cnf_matrix = logic.QuantifiedFormula(curr_quantifier, curr_variables, cnf_matrix)
+                    curr_quantifier, curr_variables = q, vs
+        pnf = logic.QuantifiedFormula(curr_quantifier, curr_variables, cnf_matrix)
+        return self.find_model_quantified(pnf, timeout)
+
+
+    def find_model_quantified(self, formula, timeout=30) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
+        if isinstance(formula, logic.QuantifiedFormula):
+            if formula.quantifier == logic.Quantifier.UNIVERSAL:
+                for assignment in itertools.product(
+                        range(self.universe), repeat=len(list(formula.variables))
+                ):
+                    if self.all_different and len(set(assignment)) != len(assignment):
+                        continue
+                    substituted_formula = formula.formula
+                    for var, ind in zip(formula.variables, assignment):
+                        substituted_formula = substitute_var_in_formula(
+                            substituted_formula, var, ind
+                        )
+                    if not self.find_model_quantified(substituted_formula, timeout)[0]:
+                        return False, None
+                return True, None
+            elif formula.quantifier == logic.Quantifier.EXISTENTIAL:
+                if not isinstance(formula.formula, logic.QuantifiedFormula):
+                    # innermost quantifier
+                    return self.find_model_existential(formula, timeout)
+                for assignment in itertools.product(
+                        range(self.universe), repeat=len(list(formula.variables))
+                ):
+                    if self.all_different and len(set(assignment)) != len(assignment):
+                        continue
+                    substituted_formula = formula.formula
+                    for var, ind in zip(formula.variables, assignment):
+                        substituted_formula = substitute_var_in_formula(
+                            substituted_formula, var, ind
+                        )
+                    if self.is_true(substituted_formula):
+                        return True, {var: ind for var, ind in zip(formula.variables, assignment)}
+                return False, None
+
+        return False, None
+
+    def find_model_existential(
             self, formula, timeout=30
     ) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
         """Recursive strategy, insert one individual in the formula at a time, assume formula in PNF, CNF with
@@ -215,29 +295,16 @@ class ModelChecker(AbstractModelChecker):
             formula = logic.QuantifiedFormula(
                 logic.Quantifier.EXISTENTIAL, [], formula
             )
-        assert formula.quantifier == logic.Quantifier.EXISTENTIAL
+        #assert formula.quantifier == logic.Quantifier.EXISTENTIAL
         # no free variables
-        assert all(
-            var in formula.variables for var in get_vars_in_formula(formula.formula)
-        ), (
-            f"Formula contains free variables, namely "
-            f"{set(str(var) for var in get_vars_in_formula(formula.formula) if var not in formula.variables)}"
-        )
-        # convert (chain of) binary conjunctions or single-clause cnf formula into n-ary conjunction
-        if not (
-                isinstance(formula.formula, NaryFormula)
-                and formula.formula.operator == logic.BinaryConnective.CONJUNCTION
-        ):
-            formula.formula = binary_to_nary(
-                formula.formula, logic.BinaryConnective.CONJUNCTION
-            )
+        #assert all(
+        #    var in formula.variables for var in get_vars_in_formula(formula.formula)
+        #), (
+        #    f"Formula contains free variables, namely "
+        #    f"{set(str(var) for var in get_vars_in_formula(formula.formula) if var not in formula.variables)}"
+        #)
         clauses = list(formula.formula.formulae)
-        for i, clause in enumerate(clauses):
-            if not (
-                    isinstance(clause, NaryFormula)
-                    and clause.operator == logic.BinaryConnective.DISJUNCTION
-            ):
-                clauses[i] = binary_to_nary(clause, logic.BinaryConnective.DISJUNCTION)
+
         # TODO check how efficient this mechanism is
         if formula in self.proven_formulae:
             logging.debug(
@@ -251,7 +318,7 @@ class ModelChecker(AbstractModelChecker):
             return ModelCheckerOutcome.NO_MODEL_INFERRED, None
 
         logging.debug(
-            f"Starting find_model with sanitized formula {' & '.join(str(c) for c in clauses)}"
+            f"Starting find_model_existential with sanitized formula {formula}"
         )
         q.put((clauses, formula.variables, []))
         start_time = time.perf_counter()
@@ -264,7 +331,7 @@ class ModelChecker(AbstractModelChecker):
                 return ModelCheckerOutcome.TIMEOUT, None
             clauses, variables, allocations = q.get()
             assert all(
-                isinstance(clause, NaryFormula)
+                isinstance(clause, logic.NaryFormula)
                 and clause.operator == logic.BinaryConnective.DISJUNCTION
                 for clause in clauses
             )
@@ -384,7 +451,7 @@ class ModelChecker(AbstractModelChecker):
         return ModelCheckerOutcome.NO_MODEL, None
 
 def replace_vars_in_clause(clause, const):
-    return NaryFormula(
+    return logic.NaryFormula(
                         logic.BinaryConnective.DISJUNCTION,
                         [
                             (
