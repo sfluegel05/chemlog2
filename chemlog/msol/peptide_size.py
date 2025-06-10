@@ -248,7 +248,7 @@ class BuildingBlock(MSOLDefinition):
                             msol.BinaryConnective.IMPLICATION,
                             ~msol.QuantifiedFormula(
                                 msol.Quantifier.EXISTENTIAL, [a_o],
-                                msol.PredicateExpression(AmideBondFO().name(), [u, a_o, v])
+                                msol.PredicateExpression(AmideBondFO().name(), [v, a_o, u])
                                 # msol.Quantifier.EXISTENTIAL, [b],
                                 # msol.PredicateExpression(AmideBond().name(), [b]) &
                                 # msol.InSetFormula(u, b) & msol.InSetFormula(v, b)
