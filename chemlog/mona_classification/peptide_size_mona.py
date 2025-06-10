@@ -111,7 +111,10 @@ class MonaPeptideSizeClassifierCompiled(MonaPeptideSizeClassifier):
         peptide_size_def = peptide_size.Peptide(n)
         peptide_size_formula = peptide_size_def()
         variables = peptide_size_formula.variables
-        res = f"var2 {','.join(self.compiler.visit(v) for v in variables)};\n"
+        so_variables = [v for v in variables if isinstance(v, msol.Var2)]
+        fo_variables = [v for v in variables if isinstance(v, msol.Var1)]
+        res = f"var2 {','.join(self.compiler.visit(v) for v in so_variables)};\n"
+        res += f"var1 {','.join(self.compiler.visit(v) for v in fo_variables)};\n"
         res += self.compiler.visit(peptide_size_formula.formula) + ";\n"
         return res
 
