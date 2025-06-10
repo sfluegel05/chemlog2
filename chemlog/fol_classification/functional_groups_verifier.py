@@ -1,5 +1,6 @@
 import logging
 import os
+from inspect import signature
 
 from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic import logic, logic_utils
@@ -7,6 +8,7 @@ from rdkit import Chem
 
 from chemlog.base_classifier import Classifier
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.msol import peptide_size
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 
 
@@ -93,3 +95,19 @@ class FunctionalGroupsVerifier(Classifier):
                     functional_groups[group].append(group_atoms)
 
         return functional_groups, None
+
+
+class FOLFunctionalGroupsClassifierTranslated(FunctionalGroupsVerifier):
+
+    @staticmethod
+    def get_structure_formulas():
+        defs_compiled = dict()
+        for definition in [peptide_size.AmideBondFO(),
+                           peptide_size.AminoGroupFO(), peptide_size.CarboxyResidueFO(),
+                           peptide_size.AAR()]:
+            sig = signature(definition.__call__)
+            variables = []
+            for p_name, param in sig.parameters.items():
+                variables.append(param.annotation(param.name))
+            defs_compiled[logic.PredicateExpression(definition.name(), variables)] = definition(*variables)
+        return defs_compiled

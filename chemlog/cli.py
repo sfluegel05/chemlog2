@@ -23,7 +23,7 @@ from chemlog.base_classifier import ChargeCategories
 from chemlog.fol_classification.charge_verifier import ChargeVerifier
 from chemlog.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
 from chemlog.fol_classification.model_checking import ModelCheckerOutcome
-from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier
+from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier, FOLPeptideSizeClassifierTranslated
 from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
 from chemlog.fol_classification.substruct_verifier import SubstructVerifier
 from chemlog.mona_classification.peptide_size_mona import MonaPeptideSizeClassifier, MonaPeptideSizeClassifierCompiled
@@ -221,6 +221,9 @@ CLASSIFIERS = {
         ClassifierKeys.PROTEINOGENICS: ProteinogenicsVerifier,
         ClassifierKeys.SUBSTRUCT: SubstructVerifier,
     },
+    'fol-translated': {
+        ClassifierKeys.SIZE: FOLPeptideSizeClassifierTranslated
+    },
     'algo': {
         ClassifierKeys.CHARGE: AlgChargeClassifier,
         ClassifierKeys.SIZE: AlgPeptideSizeClassifier,
@@ -268,7 +271,7 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
     if n_workers == 0:
         logging.info("Running in single-threaded mode")
         results = []
-        for i, (id, row) in enumerate(data_filtered.iterrows()):
+        for i, (id, row) in tqdm.tqdm(enumerate(data_filtered.iterrows())):
             results.append(strategy_call(strategy, classifier_instances, id, row))
             if len(data_filtered) < 100 or ((i+1) % (len(data_filtered) // 100)) == 0:
                 json_logger.save_items(f"classify_{strategy}", results)

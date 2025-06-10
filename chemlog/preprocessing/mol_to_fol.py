@@ -6,6 +6,7 @@ from gavel.logic import logic
 from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula
 import numpy as np
 
+from chemlog.msol.peptide_size import BuildingBlock
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 from chemlog.alg_classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
@@ -160,7 +161,6 @@ def mol_to_fol_fragments(mol: Chem.Mol, fragment_predicate_definitions: dict, fr
 
 
 def mol_to_fol_building_blocks(mol: Chem.Mol, functional_groups: dict):
-    universe = 0
     # identify carbon-fragments and building blocks with python-magic
     amide_bond_bonds = [mol.GetBondBetweenAtoms(amide_bond[0], amide_bond[2]) for amide_bond in
                         functional_groups["amide_bond"]]
@@ -196,7 +196,81 @@ def mol_to_fol_building_blocks(mol: Chem.Mol, functional_groups: dict):
          range(universe)]
     )
 
+    extensions["subset_eq"] = np.array(
+        [[all(atom in second_order_elements[j] for atom in second_order_elements[i]) for i in range(universe)] for j in
+         range(universe)]
+    )
+
     return universe, extensions, second_order_elements
+
+
+def mol_to_fol_atoms_plus_building_blocks(mol: Chem.Mol):
+    # reify building blocks
+    # contrary to mol_to_fol_building_blocks, this function does not reify functional groups
+    # also, note that the building blocks also contain other heteroatoms (not just N)
+    atoms_universe, atoms_extensions = mol_to_fol_atoms(mol)
+
+    from chemlog.alg_classification.peptide_size_classifier import get_amide_bonds, get_carboxy_derivatives, get_amino_groups
+    amide_bonds, amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs = get_amide_bonds(mol)
+    add_output = {"amide_bond": [(c, o, n) for c, o, n in zip(amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs)]}
+
+    carboxys = list(get_carboxy_derivatives(mol))
+    carboxy_c_idxs = [c for c, _, _ in carboxys]
+    amino_group_idxs = get_amino_groups(mol, amide_bond_c_idxs)
+
+    if len(amide_bonds) == 0:
+        return 0, add_output
+
+    # get carbon skeleton minus amide bonds
+    chunks = get_chunks(mol, amide_bonds)
+    add_output["chunks"] = chunks
+    # for amino groups, it might be unclear to which chunk they belong -> try all options, e.g. for CHEBI:76162
+    amino_chunk_assignments = get_possible_amino_chunk_assignments(
+        mol, amino_group_idxs, chunks, amide_bond_n_idxs, amide_bond_c_idxs, carboxy_c_idxs
+    )
+
+    building_blocks = []
+    for assignment in product(*amino_chunk_assignments):
+        building_blocks += [chunk + [amino for j, amino in enumerate(amino_group_idxs)
+                                     if assignment[j] == i] + [neigh for neigh in range(mol.GetNumAtoms()) if neigh not in chunk and mol.GetAtomWithIdx(neigh).GetAtomicNum() != 7 and any(mol.GetBondBetweenAtoms(c, neigh) for c in chunk)]
+                            for i, chunk in enumerate(chunks)]
+    # remove duplicates
+    building_blocks = [list(t) for t in {tuple(bb) for bb in building_blocks}]
+    universe = atoms_universe + len(building_blocks)
+    extensions = {
+        logic.BinaryConnective.EQ.name: np.array(
+            [[i == j for i in range(universe)] for j in range(universe)]
+        ),
+    }
+    # add atoms extensions
+    for predicate_symbol, extension in atoms_extensions.items():
+        if len(extension.shape) == 1:
+            if predicate_symbol not in extensions:
+                extensions[predicate_symbol] = np.zeros(universe, dtype=np.bool_)
+            extensions[predicate_symbol][:atoms_universe] = extension
+        elif len(extension.shape) == 2:
+            if predicate_symbol not in extensions:
+                extensions[predicate_symbol] = np.zeros((universe, universe), dtype=np.bool_)
+            extensions[predicate_symbol][:atoms_universe, :atoms_universe] = extension
+        else:
+            raise NotImplementedError()
+
+    # add building blocks
+    extensions[BuildingBlock().name()] = np.zeros(universe, dtype=np.bool_)
+    extensions[BuildingBlock().name()][atoms_universe:atoms_universe + len(building_blocks)] = True
+
+    # relations between atoms and building blocks
+    extensions["in"] = np.array(
+        [[j >= atoms_universe and atom in building_blocks[j - atoms_universe] for j in range(universe)] for atom in range(universe)]
+    )
+
+    # relations between building blocks
+    extensions["subset_eq"] = np.array(
+        [[i >= atoms_universe and j >= atoms_universe and all(atom in building_blocks[j - atoms_universe] for atom in building_blocks[i - atoms_universe]) for i in range(universe)] for j in
+         range(universe)]
+    )
+
+    return universe, extensions, building_blocks
 
 
 def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: dict):

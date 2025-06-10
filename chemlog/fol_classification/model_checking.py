@@ -246,6 +246,7 @@ class ModelChecker(AbstractModelChecker):
                     cnf_matrix = logic.QuantifiedFormula(curr_quantifier, curr_variables, cnf_matrix)
                     curr_quantifier, curr_variables = q, vs
         pnf = logic.QuantifiedFormula(curr_quantifier, curr_variables, cnf_matrix)
+        logging.debug("Formula in PNF: " + str(pnf))
         return self.find_model_quantified(pnf, timeout)
 
 
@@ -262,9 +263,10 @@ class ModelChecker(AbstractModelChecker):
                         substituted_formula = substitute_var_in_formula(
                             substituted_formula, var, ind
                         )
-                    if not self.find_model_quantified(substituted_formula, timeout)[0]:
-                        return False, None
-                return True, None
+                    res = self.find_model_quantified(substituted_formula, timeout)
+                    if res[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
+                        return ModelCheckerOutcome.NO_MODEL, None
+                return ModelCheckerOutcome.MODEL_FOUND, dict()
             elif formula.quantifier == logic.Quantifier.EXISTENTIAL:
                 if not isinstance(formula.formula, logic.QuantifiedFormula):
                     # innermost quantifier
@@ -279,11 +281,13 @@ class ModelChecker(AbstractModelChecker):
                         substituted_formula = substitute_var_in_formula(
                             substituted_formula, var, ind
                         )
-                    if self.is_true(substituted_formula):
-                        return True, {var: ind for var, ind in zip(formula.variables, assignment)}
-                return False, None
+                    res = self.find_model_quantified(substituted_formula, timeout)
+                    if res[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
+                        return ModelCheckerOutcome.MODEL_FOUND, {**{var: ind for var, ind in zip(formula.variables, assignment)},
+                                                                 **(res[1] if res[1] is not None else {})}
+                return ModelCheckerOutcome.NO_MODEL, None
 
-        return False, None
+        raise NotImplementedError(f"Cannot handle formula {formula} of type {type(formula)} in find_model_quantified")
 
     def find_model_existential(
             self, formula, timeout=30

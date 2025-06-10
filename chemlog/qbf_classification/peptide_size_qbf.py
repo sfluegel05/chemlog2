@@ -142,7 +142,6 @@ class QBFPeptideSizeClassifierDepQBFTranslated(QBFPeptideSizeClassifierDepQBF):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._peptide_structures = dict()
         self.peptide_definitions = {
             peptide_size.HasOverlap().name(): peptide_size.HasOverlap(),
             peptide_size.IsConnected().name(): peptide_size.IsConnected(),
@@ -456,13 +455,19 @@ def building_block_example(smiles):
     v = msol.Var1("vvv")
     w = msol.Var1("www")
     a_o = msol.Var1("a_o")
-    bb = msol.QuantifiedFormula(
-            msol.Quantifier.EXISTENTIAL, [x],
-            peptide_size.BuildingBlock()(x))
-    for u_index in [0]:# range(mol.GetNumAtoms()): #[0, 3, 4, 5, 6, 7]:
+    bb = (msol.PredicateExpression("has_bond_to", [u, w])
+                    & msol.InSetFormula(u, msol.Var2("N")) &
+                        ~msol.QuantifiedFormula(
+                            msol.Quantifier.EXISTENTIAL, [a_o],
+                            msol.PredicateExpression(peptide_size.AmideBondFO().name(), [u, a_o, w])
+                        )
+                    )
+
+
+    for u_index in [1,2]:# range(mol.GetNumAtoms()): #[0, 3, 4, 5, 6, 7]:
         v_index = u_index + 1
-        #print(f"Setting u to {u_index}, v to {v_index}")
-        formula = translator.visit(bb) #var_indices={"uuu": u_index, "vvv": v_index})
+        print(f"Setting u to {u_index}, w to 0")
+        formula = translator.visit(bb, var_indices={"uuu": u_index, "www": 0})
         dimacs = ["c \\exists X: BuildingBlock(X)"]
         dimacs.append(f"c Target formula: {formula}")
         print(f"Target formula: {formula}")
@@ -540,6 +545,6 @@ if __name__ == "__main__":
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
     classifier = QBFPeptideSizeClassifierDepQBFTranslated(load_formulas=True)
-    #aar_example(smiles_no_peptide)
-    print(classifier.classify(Chem.MolFromSmiles(glycylglycine)))
+    #building_block_example("C(=O)N")
+    print(classifier.classify(Chem.MolFromSmiles("O=C(N[C@H](C(=O)OC)CC(C)C)C(=O)N")))
 

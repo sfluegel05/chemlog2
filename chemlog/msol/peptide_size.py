@@ -282,7 +282,7 @@ class AAR(MSOLDefinition):
                 msol.Quantifier.EXISTENTIAL, [a_c, a_o, a_s],
                 msol.NaryFormula(msol.BinaryConnective.CONJUNCTION, [
                     msol.PredicateExpression(CarboxyResidueFO().name(), [a_c, a_o, a_s]),
-                    msol.InSetFormula(a_c, x), msol.InSetFormula(a_o, x), msol.InSetFormula(a_s, x)]))
+                    msol.InSetFormula(a_c, x)]))
          ])
 
 
@@ -300,9 +300,7 @@ class Peptide(MSOLDefinition):
         bond_os = [msol.Var1(f"b{i}o") for i in range(self.n_amino_acid_residues - 1)]
         bond_ends = [msol.Var1(f"b{i}b") for i in range(self.n_amino_acid_residues - 1)]
         return msol.QuantifiedFormula(
-            msol.Quantifier.EXISTENTIAL, aars,
-            msol.QuantifiedFormula(
-                msol.Quantifier.EXISTENTIAL, bond_starts + bond_os + bond_ends,
+            msol.Quantifier.EXISTENTIAL, aars + bond_starts + bond_os + bond_ends,
                 msol.NaryFormula(
                     msol.BinaryConnective.CONJUNCTION,
                     # AAR(a_i)
@@ -326,7 +324,7 @@ class Peptide(MSOLDefinition):
                          for j in range(i + 1)]) for i in range(self.n_amino_acid_residues - 1)]
                 )
             )
-        )
+
 
 
 if __name__ == "__main__":
