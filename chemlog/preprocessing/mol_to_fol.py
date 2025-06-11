@@ -211,15 +211,13 @@ def mol_to_fol_atoms_plus_building_blocks(mol: Chem.Mol):
     atoms_universe, atoms_extensions = mol_to_fol_atoms(mol)
 
     from chemlog.alg_classification.peptide_size_classifier import get_amide_bonds, get_carboxy_derivatives, get_amino_groups
+
     amide_bonds, amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs = get_amide_bonds(mol)
     add_output = {"amide_bond": [(c, o, n) for c, o, n in zip(amide_bond_c_idxs, amide_bond_o_idxs, amide_bond_n_idxs)]}
 
     carboxys = list(get_carboxy_derivatives(mol))
     carboxy_c_idxs = [c for c, _, _ in carboxys]
     amino_group_idxs = get_amino_groups(mol, amide_bond_c_idxs)
-
-    if len(amide_bonds) == 0:
-        return 0, add_output
 
     # get carbon skeleton minus amide bonds
     chunks = get_chunks(mol, amide_bonds)
