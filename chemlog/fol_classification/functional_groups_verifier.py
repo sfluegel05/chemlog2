@@ -7,6 +7,7 @@ from gavel.logic import logic, logic_utils
 from rdkit import Chem
 
 from chemlog.base_classifier import Classifier
+from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 from chemlog.msol import peptide_size
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
@@ -22,6 +23,8 @@ class FunctionalGroupsVerifier(Classifier):
         # take right-hand side of formulas
         self.functional_group_defs = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.functional_group_defs.values():
+            formula.right = normalize_fol_formula(formula.right)
         with open(os.path.join("data", "fol_specifications", "functional_group_helpers.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parser = TPTPParser()
@@ -29,6 +32,8 @@ class FunctionalGroupsVerifier(Classifier):
         # take right-hand side of formulas
         self.functional_group_helpers = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.functional_group_helpers.values():
+            formula.right = normalize_fol_formula(formula.right)
 
 
     def verify_functional_groups(self, mol: Chem.Mol, expected_groups: dict):

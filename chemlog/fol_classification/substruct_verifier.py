@@ -7,6 +7,7 @@ from gavel.dialects.tptp.parser import TPTPParser
 import os
 
 from chemlog.base_classifier import Classifier
+from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
@@ -21,6 +22,9 @@ class SubstructVerifier(Classifier):
         # take right-hand side of formulas
         self.substruct_defs = {f[0].formula.left.predicate.value:
                                    f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.substruct_defs.values():
+            formula.right = normalize_fol_formula(formula.right)
+
         helper_path = os.path.join("data", "fol_specifications", "substruct_helpers.tptp")
         if os.path.exists(helper_path):
             with open(helper_path, "r") as f:
@@ -28,6 +32,8 @@ class SubstructVerifier(Classifier):
             tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
             self.substruct_helpers = {f[0].formula.left.predicate.value:
                                           f[0].formula for f in tptp_parsed if len(f) > 0}
+            for formula in self.substruct_helpers.values():
+                formula.right = normalize_fol_formula(formula.right)
         else:
             self.substruct_helpers = dict()
 

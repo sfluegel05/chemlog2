@@ -205,52 +205,8 @@ class ModelChecker(AbstractModelChecker):
         )
 
 
-    def nnf_to_pnf(self, formula):
-        # assume formula in NNF without -> or <->
-        # separate quantifiers from matrix
-        quantifiers = []
-        if isinstance(formula, logic.QuantifiedFormula):
-            quantifiers.append((formula.quantifier, formula.variables))
-            formula, qs = self.nnf_to_pnf(formula.formula)
-            quantifiers += qs
-        elif isinstance(formula, logic.UnaryFormula):
-            pass
-        elif isinstance(formula, logic.BinaryFormula):
-            formula.left, qs_left = self.nnf_to_pnf(formula.left)
-            formula.right, qs_right = self.nnf_to_pnf(formula.right)
-            quantifiers += qs_left + qs_right
-        elif isinstance(formula, logic.NaryFormula):
-            f_qs = [self.nnf_to_pnf(f) for f in formula.formulae]
-            formula.formulae = [f for f, _ in f_qs]
-            quantifiers += [q for _, qs in f_qs for q in qs]
-        else:
-            pass
-
-        return formula, quantifiers
 
     def find_model(self, formula, timeout=30) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
-        """Converts formula to PNF, CNF, then applies model checking for every quantifier"""
-        nnf_formula = convert_to_nnf(deepcopy(formula))
-        pnf_matrix, quantifiers = self.nnf_to_pnf(nnf_formula)
-        cnf_matrix = convert_to_cnf(pnf_matrix)
-
-        if len(quantifiers) == 0:
-            return self.find_model_existential(logic.QuantifiedFormula(logic.Quantifier.EXISTENTIAL, [], cnf_matrix), timeout)
-        curr_quantifier, curr_variables = quantifiers[-1]
-        if len(quantifiers) > 1:
-            quantifiers.reverse()
-            for q, vs in quantifiers[1:]:
-                if q == curr_quantifier:
-                    curr_variables = vs + curr_variables
-                else:
-                    cnf_matrix = logic.QuantifiedFormula(curr_quantifier, curr_variables, cnf_matrix)
-                    curr_quantifier, curr_variables = q, vs
-        pnf = logic.QuantifiedFormula(curr_quantifier, curr_variables, cnf_matrix)
-        logging.debug("Formula in PNF: " + str(pnf))
-        return self.find_model_quantified(pnf, timeout)
-
-
-    def find_model_quantified(self, formula, timeout=30) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
         if isinstance(formula, logic.QuantifiedFormula):
             if formula.quantifier == logic.Quantifier.UNIVERSAL:
                 for assignment in itertools.product(
@@ -263,11 +219,11 @@ class ModelChecker(AbstractModelChecker):
                         substituted_formula = substitute_var_in_formula(
                             substituted_formula, var, ind
                         )
-                    res = self.find_model_quantified(substituted_formula, timeout)
+                    res = self.find_model(substituted_formula, timeout)
                     if res[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
                         return ModelCheckerOutcome.NO_MODEL, None
                 return ModelCheckerOutcome.MODEL_FOUND, dict()
-            elif formula.quantifier == logic.Quantifier.EXISTENTIAL:
+            else:
                 if not isinstance(formula.formula, logic.QuantifiedFormula):
                     # innermost quantifier
                     return self.find_model_existential(formula, timeout)
@@ -281,13 +237,14 @@ class ModelChecker(AbstractModelChecker):
                         substituted_formula = substitute_var_in_formula(
                             substituted_formula, var, ind
                         )
-                    res = self.find_model_quantified(substituted_formula, timeout)
+                    res = self.find_model(substituted_formula, timeout)
                     if res[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                         return ModelCheckerOutcome.MODEL_FOUND, {**{var: ind for var, ind in zip(formula.variables, assignment)},
                                                                  **(res[1] if res[1] is not None else {})}
                 return ModelCheckerOutcome.NO_MODEL, None
+        else:
+            return self.find_model_existential(formula, timeout)
 
-        raise NotImplementedError(f"Cannot handle formula {formula} of type {type(formula)} in find_model_quantified")
 
     def find_model_existential(
             self, formula, timeout=30
@@ -295,19 +252,13 @@ class ModelChecker(AbstractModelChecker):
         """Recursive strategy, insert one individual in the formula at a time, assume formula in PNF, CNF with
         only existential quantifiers"""
         q = queue.LifoQueue()
-        if not isinstance(formula, logic.QuantifiedFormula):
-            formula = logic.QuantifiedFormula(
-                logic.Quantifier.EXISTENTIAL, [], formula
-            )
-        #assert formula.quantifier == logic.Quantifier.EXISTENTIAL
-        # no free variables
-        #assert all(
-        #    var in formula.variables for var in get_vars_in_formula(formula.formula)
-        #), (
-        #    f"Formula contains free variables, namely "
-        #    f"{set(str(var) for var in get_vars_in_formula(formula.formula) if var not in formula.variables)}"
-        #)
-        clauses = list(formula.formula.formulae)
+
+        if isinstance(formula, logic.QuantifiedFormula):
+            clauses = list(formula.formula.formulae)
+            init_variables = formula.variables
+        else:
+            clauses = formula.formulae
+            init_variables = []
 
         # TODO check how efficient this mechanism is
         if formula in self.proven_formulae:
@@ -324,7 +275,7 @@ class ModelChecker(AbstractModelChecker):
         logging.debug(
             f"Starting find_model_existential with sanitized formula {formula}"
         )
-        q.put((clauses, formula.variables, []))
+        q.put((clauses, init_variables, []))
         start_time = time.perf_counter()
 
         while not q.empty():

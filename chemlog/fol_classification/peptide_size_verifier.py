@@ -7,6 +7,7 @@ from gavel.logic import logic
 import os
 
 from chemlog.base_classifier import Classifier
+from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.fol_classification.msol_to_fol_translator import FOLTranslator
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_building_blocks, apply_variable_assignment, mol_to_fol_atoms_plus_building_blocks
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
@@ -17,8 +18,12 @@ class PeptideSizeVerifier(Classifier):
 
     def __init__(self):
         self.structure_formulas = self.get_structure_formulas()
+        for f in self.structure_formulas.values():
+            f.right = normalize_fol_formula(f.right)
         logging.debug(f"Loaded {len(self.structure_formulas)} peptide structure formulas:")
         logging.debug('\n'.join([f'{k}: {v}' for k, v in self.structure_formulas.items()]))
+
+        self._peptide_formulas = dict()
 
     @staticmethod
     def get_fol_structure(mol: Chem.Mol, functional_groups=None):
@@ -75,6 +80,11 @@ class PeptideSizeVerifier(Classifier):
             {"target": expected_n, "variable_assignments": variable_assignment, "outcome": result.name})
         return result, proof_attempts
 
+    def get_peptide_formula(self, n_amino_acid_residues: int):
+        if n_amino_acid_residues not in self._peptide_formulas:
+            self._peptide_formulas[n_amino_acid_residues] = normalize_fol_formula(self.build_peptide_structure_formula(n_amino_acid_residues))
+        return self._peptide_formulas[n_amino_acid_residues]
+
     def classify(self, mol: Chem.Mol, functional_groups=None, *args, **kwargs) -> (int, dict):
         # for functional_group_extensions, assume that they are true
         universe, extensions, second_order_elements = self.get_fol_structure(mol, functional_groups)
@@ -87,7 +97,7 @@ class PeptideSizeVerifier(Classifier):
                                                          for pred, formula in self.structure_formulas.items()})
         assignment = None
         for n in range(2, 11):
-            target_formula = self.build_peptide_structure_formula(n)
+            target_formula = self.get_peptide_formula(n)
             logging.debug(f"Target formula for n={n}: {target_formula}")
 
             outcome = model_checker.find_model(target_formula)

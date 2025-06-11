@@ -4,6 +4,7 @@ from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic import logic
 import os
 
+from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_fragments, apply_variable_assignment
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 
@@ -18,18 +19,26 @@ class ChargeVerifier(Classifier):
         # take right-hand side of formulas
         self.charge_formulas = {ChargeCategories[f[0].formula.left.predicate.value.upper()]:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.charge_formulas.values():
+            formula.right = normalize_fol_formula(formula.right)
+
         with open(os.path.join("data", "fol_specifications", "fragment_properties.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
         # take right-hand side of formulas
         self.fragment_property_formulas = {f[0].formula.left.predicate.value: f[0].formula for f in tptp_parsed if
                                            len(f) > 0}
+        for formula in self.fragment_property_formulas.values():
+            formula.right = normalize_fol_formula(formula.right)
+
         with open(os.path.join("data", "fol_specifications", "fragment_helpers.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
         # take right-hand side of formulas
         self.fragment_helper_formulas = {f[0].formula.left.predicate.value: f[0].formula for f in tptp_parsed if
                                            len(f) > 0}
+        for formula in self.fragment_helper_formulas.values():
+            formula.right = normalize_fol_formula(formula.right)
 
     def verify_charge_category(self, mol: Chem.Mol, expected_category: ChargeCategories, variable_assignment: dict):
         universe, extensions = mol_to_fol_fragments(mol, self.fragment_property_formulas, self.fragment_helper_formulas)

@@ -8,6 +8,7 @@ from gavel.dialects.tptp.parser import TPTPParser
 import os
 
 from chemlog.base_classifier import Classifier
+from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
@@ -23,10 +24,15 @@ class ProteinogenicsVerifier(Classifier):
         # take right-hand side of formulas
         self.proteinogenics_defs = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.proteinogenics_defs.values():
+            formula.right = normalize_fol_formula(formula.right)
+
         with open(os.path.join("data", "fol_specifications", "proteinogenics_helpers.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parsed = [tptp_parser.parse(formula) for formula in tptp_raw]
         self.helpers = {f[0].formula.left.predicate.value: f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.helpers.values():
+            formula.right = normalize_fol_formula(formula.right)
 
     def setup_model_checker(self, mol, functional_groups, fol_structure=None):
         atom_level_functional_groups = {
