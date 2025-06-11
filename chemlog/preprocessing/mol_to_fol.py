@@ -276,9 +276,10 @@ def apply_variable_assignment(formula: logic.LogicElement, variable_assignment: 
     for variable_name, variable_value in variable_assignment.items():
         matching_variables = [v for v in variables if v.symbol.lower() == variable_name.lower()]
         if len(matching_variables) == 0:
-            logging.warning(f"Variable {variable_name} not found in formula")
+            logging.debug(f"Variable {variable_name} not found in formula")
+            return formula
         if len(matching_variables) > 1:
-            logging.warning(f"Multiple variables with name {variable_name} found in formula")
+            logging.debug(f"Multiple variables with name {variable_name} found in formula")
         formula = substitute_var_in_formula(formula, matching_variables[0], variable_value)
     return formula
 

@@ -3,7 +3,7 @@ from chemlog.msol import msol
 
 class FOLTranslator(msol.MSOLCompiler):
 
-    def __init__(self, so_predicate_variables=None):
+    def __init__(self, so_predicate_variables=None, predicate_definitions=None):
         super().__init__()
         # this translator distinguishes between two types of second-order variables: Those that become predicates in
         # FOL and those that become FOL variables: a in C means that an atom a is a carbon atom (MSOL-style version
@@ -11,6 +11,10 @@ class FOLTranslator(msol.MSOLCompiler):
         if so_predicate_variables is None:
             so_predicate_variables = []
         self.so_predicate_variables = so_predicate_variables
+
+        if predicate_definitions is None:
+            predicate_definitions = dict()
+        self.predicate_definitions = predicate_definitions
 
     def visit_quantifier(self, quantifier: msol.Quantifier):
         return quantifier
@@ -31,6 +35,10 @@ class FOLTranslator(msol.MSOLCompiler):
         return msol.BinaryFormula(self.visit(formula.left), self.visit(formula.operator), self.visit(formula.right))
 
     def visit_predicate_expression(self, expression: msol.PredicateExpression):
+        if expression.predicate in self.predicate_definitions:
+            # If the predicate is defined, we use the definition
+            definition = self.predicate_definitions[expression.predicate](*expression.arguments)
+            return self.visit(definition)
         return msol.PredicateExpression(self.visit(expression.predicate), [self.visit(arg) for arg in expression.arguments])
 
     def visit_variable(self, variable: msol.Variable):

@@ -492,3 +492,7 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
             save_results_at = i + (len(results) - i) // 4 + 10
             json_logger.save_items(f"verify_{json_logger.timestamp}", res)
     json_logger.save_items(f"verify_{json_logger.timestamp}", res)
+
+
+if __name__ == "__main__":
+    classify_chebi(["-v", 239, "-s", "fol-translated", "-p", "-l", "100", "-w", "0"], standalone_mode=False)
