@@ -60,10 +60,16 @@ def make_variables_unique(formula):
     return _rename(formula, {})
 
 
+def sort_clauses_by_complexity(cnf_matrix: logic.NaryFormula):
+    """Assume CNF formula, sort clauses so that simple clauses (less members, no universal quantifiers) come first"""
+    cnf_matrix.formulae = sorted(cnf_matrix.formulae, key=lambda clause: (sum(1 if not isinstance(clause, logic.QuantifiedFormula) else 100 for clause in clause.formulae)))
+    return cnf_matrix
+
 def _unique_nnf_to_existential_cnf(formula):
     """Assumes formula in NNF without -> or <->, returns formula with existential quantifiers at the front, matrix in CNF (but still with universal quantifiers)"""
     pnf_matrix, quantifiers = nnf_to_existential_pnf(formula)
-    cnf_matrix = convert_to_cnf(pnf_matrix)
+    cnf_matrix_unsorted = convert_to_cnf(pnf_matrix)
+    cnf_matrix = sort_clauses_by_complexity(cnf_matrix_unsorted)
 
     if len(quantifiers) == 0:
         return cnf_matrix

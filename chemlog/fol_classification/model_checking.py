@@ -164,11 +164,10 @@ class ModelChecker(AbstractModelChecker):
                     # take definition formula, replace variables with literal arguments
                     # e.g. for literal abc(k) and definition abc(x) <=> \exists y: p(x, y) replace x with k,
                     # run model checking on \exists y: p(k, y)
-                    def_formula = deepcopy(definition[1])
-                    for ind, def_var in zip(literal.arguments, definition[0]):
-                        def_formula = substitute_var_in_formula(
-                            def_formula, def_var, ind
-                        )
+                    def_formula = definition[1]
+                    def_formula = substitute_n_vars_in_formula(
+                        def_formula, {def_var: ind for def_var, ind in zip(definition[0], literal.arguments)}
+                    )
                     logging.debug(
                         f">>> Starting definition model finding for {literal.predicate}, substituting "
                         f"{', '.join([str(ind) + '|->' + str(def_var) for ind, def_var in zip(literal.arguments, definition[0])])}"
@@ -205,9 +204,8 @@ class ModelChecker(AbstractModelChecker):
                 if self.all_different and len(set(assignment)) != len(assignment):
                     continue
                 substituted_formula = literal.formula
-                for var, ind in zip(literal.variables, assignment):
-                    substituted_formula = substitute_var_in_formula(
-                        substituted_formula, var, ind
+                substituted_formula = substitute_n_vars_in_formula(
+                        substituted_formula, {var: ind for var, ind in zip(literal.variables, assignment)}
                     )
                 res = self.find_model(substituted_formula)
                 if res[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
@@ -232,9 +230,8 @@ class ModelChecker(AbstractModelChecker):
                     if self.all_different and len(set(assignment)) != len(assignment):
                         continue
                     substituted_formula = formula.formula
-                    for var, ind in zip(formula.variables, assignment):
-                        substituted_formula = substitute_var_in_formula(
-                            substituted_formula, var, ind
+                    substituted_formula = substitute_n_vars_in_formula(
+                            substituted_formula, {var: ind for var, ind in zip(formula.variables, assignment)}
                         )
                     res = self.find_model(substituted_formula, timeout)
                     if res[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
@@ -243,24 +240,23 @@ class ModelChecker(AbstractModelChecker):
             else:
                 if not isinstance(formula.formula, logic.QuantifiedFormula):
                     # innermost quantifier
-                    return self.find_model_existential(formula, timeout)
+                    return self.find_model(formula, timeout)
                 for assignment in itertools.product(
                         range(self.universe), repeat=len(list(formula.variables))
                 ):
                     if self.all_different and len(set(assignment)) != len(assignment):
                         continue
                     substituted_formula = formula.formula
-                    for var, ind in zip(formula.variables, assignment):
-                        substituted_formula = substitute_var_in_formula(
-                            substituted_formula, var, ind
-                        )
+                    substituted_formula = substitute_n_vars_in_formula(
+                            substituted_formula, {var: ind for var, ind in zip(formula.variables, assignment)}
+                    )
                     res = self.find_model(substituted_formula, timeout)
                     if res[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                         return ModelCheckerOutcome.MODEL_FOUND, {**{var: ind for var, ind in zip(formula.variables, assignment)},
                                                                  **(res[1] if res[1] is not None else {})}
                 return ModelCheckerOutcome.NO_MODEL, None
         else:
-            return self.find_model_existential(formula, timeout)
+            return self.find_model(formula, timeout)
 
 
     def find_model(
@@ -423,54 +419,59 @@ class ModelChecker(AbstractModelChecker):
         self.disproven_formulae.append(formula)
         return ModelCheckerOutcome.NO_MODEL, None
 
+def substitute_n_vars_in_formula(
+    formula: logic.LogicElement, substitutions: Dict
+):
+    """Replace every occurrence of the key variables with the given value. If var is None, replace all variables with ind"""
+    if isinstance(formula, logic.NaryFormula):
+        return logic.NaryFormula(
+            formula.operator,
+            [substitute_n_vars_in_formula(f, substitutions) for f in formula.formulae],
+        )
+    elif isinstance(formula, logic.PredicateExpression):
+        return logic.PredicateExpression(
+            formula.predicate,
+            [substitutions.get(arg, arg) for arg in formula.arguments
+            ],
+        )
+    elif isinstance(formula, logic.UnaryFormula):
+        return logic.UnaryFormula(
+            formula.connective, substitute_n_vars_in_formula(formula.formula, substitutions)
+        )
+    elif isinstance(formula, logic.QuantifiedFormula):
+        variables = [arg for arg in formula.variables if arg not in substitutions]
+        return logic.QuantifiedFormula(
+            formula.quantifier,
+            variables,
+            substitute_n_vars_in_formula(formula.formula, substitutions),
+        )
+    elif isinstance(formula, logic.BinaryFormula):
+        left = substitute_n_vars_in_formula(formula.left, substitutions)
+        right = substitute_n_vars_in_formula(formula.right, substitutions)
+        return logic.BinaryFormula(left, formula.operator, right)
+    elif isinstance(formula, logic.Variable):
+        return substitutions.get(formula, formula)
+    return formula
+
 def replace_vars_in_clause(clause, const):
     return logic.NaryFormula(
-                        logic.BinaryConnective.DISJUNCTION,
-                        [
-                            (
-                                logic.UnaryFormula(
-                                    logic.UnaryConnective.NEGATION,
-                                    logic.PredicateExpression(
-                                        literal.formula.predicate,
-                                        [
-                                            (
-                                                const
-                                                if isinstance(arg, logic.Variable)
-                                                else arg
-                                            )
-                                            for arg in literal.formula.arguments
-                                        ],
-                                    ),
-                                )
-                                if isinstance(literal, logic.UnaryFormula)
-                                else (
-                                    logic.PredicateExpression(
-                                        literal.predicate,
-                                        [
-                                            (
-                                                const
-                                                if isinstance(arg, logic.Variable)
-                                                else arg
-                                            )
-                                            for arg in literal.arguments
-                                        ],
-                                    )
-                                    if isinstance(literal, logic.PredicateExpression)
-                                    else logic.BinaryFormula(
-                                        (
-                                            const
-                                            if isinstance(literal.left, logic.Variable)
-                                            else literal.left
-                                        ),
-                                        literal.operator,
-                                        (
-                                            const
-                                            if isinstance(literal.right, logic.Variable)
-                                            else literal.right
-                                        ),
-                                    )
-                                )
-                            )
-                            for literal in clause.formulae
-                        ],
-                    )
+        logic.BinaryConnective.DISJUNCTION, [
+            logic.UnaryFormula(
+                logic.UnaryConnective.NEGATION,
+                logic.PredicateExpression(
+                    literal.formula.predicate, [
+                        const if isinstance(arg, logic.Variable) else arg for arg in literal.formula.arguments
+                    ],
+                ),
+            ) if isinstance(literal, logic.UnaryFormula)
+            else logic.PredicateExpression(literal.predicate, [
+                const if isinstance(arg, logic.Variable) else arg for arg in literal.arguments
+                ]) if isinstance(literal, logic.PredicateExpression)
+                else logic.BinaryFormula(
+                    const if isinstance(literal.left, logic.Variable) else literal.left,
+                    literal.operator,
+                    const if isinstance(literal.right, logic.Variable) else literal.right,
+                )
+            for literal in clause.formulae
+        ],
+    )

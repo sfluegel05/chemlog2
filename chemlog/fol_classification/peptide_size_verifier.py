@@ -137,7 +137,7 @@ class FOLPeptideSizeClassifierTranslated(PeptideSizeVerifier):
         peptide = peptide_size.Peptide(n)
         peptide_definitions = {peptide_size.HasOverlap().name(): peptide_size.HasOverlap(),
                                #peptide_size.AmideBondFO().name(): peptide_size.AmideBondFO(),
-                               peptide_size.AminoGroupFO().name(): peptide_size.AminoGroupFO(),
+                               #peptide_size.AminoGroupFO().name(): peptide_size.AminoGroupFO(),
                                peptide_size.CarboxyResidueFO().name(): peptide_size.CarboxyResidueFO(),
                                peptide_size.AAR().name(): peptide_size.AAR()}
         translator = FOLTranslator(["C", "N", "O", "Has1Hs", "ChargeN"], predicate_definitions=peptide_definitions)
