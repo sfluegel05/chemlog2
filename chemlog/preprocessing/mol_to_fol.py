@@ -207,7 +207,6 @@ def mol_to_fol_building_blocks(mol: Chem.Mol, functional_groups: dict):
 def mol_to_fol_atoms_plus_building_blocks(mol: Chem.Mol):
     # reify building blocks
     # contrary to mol_to_fol_building_blocks, this function does not reify functional groups
-    # also, note that the building blocks also contain other heteroatoms (not just N)
     atoms_universe, atoms_extensions = mol_to_fol_atoms(mol)
 
     from chemlog.alg_classification.peptide_size_classifier import get_amide_bonds, get_carboxy_derivatives, get_amino_groups
@@ -230,7 +229,7 @@ def mol_to_fol_atoms_plus_building_blocks(mol: Chem.Mol):
     building_blocks = []
     for assignment in product(*amino_chunk_assignments):
         building_blocks += [chunk + [amino for j, amino in enumerate(amino_group_idxs)
-                                     if assignment[j] == i] + [neigh for neigh in range(mol.GetNumAtoms()) if neigh not in chunk and mol.GetAtomWithIdx(neigh).GetAtomicNum() != 7 and any(mol.GetBondBetweenAtoms(c, neigh) for c in chunk)]
+                                     if assignment[j] == i]
                             for i, chunk in enumerate(chunks)]
     # remove duplicates
     building_blocks = [list(t) for t in {tuple(bb) for bb in building_blocks}]
@@ -260,12 +259,6 @@ def mol_to_fol_atoms_plus_building_blocks(mol: Chem.Mol):
     # relations between atoms and building blocks
     extensions["in"] = np.array(
         [[j >= atoms_universe and atom in building_blocks[j - atoms_universe] for j in range(universe)] for atom in range(universe)]
-    )
-
-    # relations between building blocks
-    extensions["subset_eq"] = np.array(
-        [[i >= atoms_universe and j >= atoms_universe and all(atom in building_blocks[j - atoms_universe] for atom in building_blocks[i - atoms_universe]) for i in range(universe)] for j in
-         range(universe)]
     )
 
     return universe, extensions, building_blocks
