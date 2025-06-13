@@ -246,7 +246,6 @@ def binary_to_nary(formula):
 
 
 def qbf_to_cnf(formula, use_tseytin=True, verbose=False):
-    logging.debug("Converting QBF formula to CNF")
     formula = deepcopy(formula)
     if verbose:
         print(f"Converting QBF formula to CNF: {formula}")
