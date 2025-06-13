@@ -102,13 +102,14 @@ class ChEBIData:
         if not os.path.exists(self.processed_path):
             res = {}
             for mol_id, mol in self.sdf_file_to_mol():
+                if mol_id not in self.chebi.keys():
+                    continue
                 if "smiles" not in self.chebi[mol_id] or self.chebi[mol_id]["smiles"] is None:
                     # entries with mol but without smiles are usually [ ]n specifications
                     continue
                 if any(atom.GetAtomicNum() == 0 for atom in mol.GetAtoms()):
                     continue
-                if mol_id in self.chebi.keys():
-                    res[mol_id] = {"mol": mol, **self.chebi[mol_id]}
+                res[mol_id] = {"mol": mol, **self.chebi[mol_id]}
             df = pd.DataFrame.from_dict(res, orient="index")
             df.to_pickle(self.processed_path)
         else:
