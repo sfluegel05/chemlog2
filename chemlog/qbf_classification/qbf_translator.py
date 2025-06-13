@@ -21,12 +21,8 @@ class QBFTranslator(msol.MSOLCompiler):
         if predicate_definitions is None:
             predicate_definitions = dict()
         self.predicate_definitions = predicate_definitions
-        self.visit_count = 0
 
     def visit(self, obj, **kwargs):
-        self.visit_count += 1
-        if self.visit_count % 1000000 == 0:
-            logging.debug(f"Visited {self.visit_count} objects in MSOL->QBF translation.")
         if isinstance(obj, str):
             return obj
         meth = getattr(self, f"visit_{obj.__visit_name__}", None)

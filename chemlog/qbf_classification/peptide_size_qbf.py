@@ -45,7 +45,6 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
     @staticmethod
     def build_peptide_structure(n_amino_acids, n_atoms):
         # get qbf formula for peptide structure
-        logging.debug(f"Building peptide structure")
         amino_acids = [amino_acid_residue(n_atoms, [f"aar_{i}_{j}" for j in range(n_atoms)]) for i in
                        range(n_amino_acids)]
         # aars do not overlap - each atom j only appears once (at most)
@@ -75,8 +74,6 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
             for i in range(1, n_amino_acids)
         ]
 
-        logging.debug("Finished building peptide structure")
-
         return qbf.QuantifiedFormula(
             qbf.Quantifier.E,
             [f"aar_{i}_{j}" for i in range(n_amino_acids) for j in range(n_atoms)],
@@ -105,7 +102,6 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
         for n in range(2, 11):
             logging.debug(f"Running QBF for peptide size {n} with {n_atoms} atoms")
             target_formula = self.get_peptide_structure(n, n_atoms)
-            logging.debug(f"Target formula done")
             dimacs = [f"c Peptide structure {n}+ ({n_atoms} atoms)"]
             # get matrix
             matrix = target_formula
@@ -152,9 +148,7 @@ class QBFPeptideSizeClassifierDepQBFTranslated(QBFPeptideSizeClassifierDepQBF):
         }
 
     def build_peptide_structure(self, n_amino_acids, n_atoms):
-        logging.debug("Building peptide structure with translated definitions")
         peptide_msol = peptide_size.Peptide(n_amino_acids)
-        logging.debug(f"Peptide structure loaded, now translating to QBF")
         translator = QBFTranslator(n_atoms, self.peptide_definitions)
         return translator.visit(peptide_msol())
 
