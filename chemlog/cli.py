@@ -153,7 +153,8 @@ def classify_pubchem(from_batch, to_batch, return_chebi_classes, molecules):
 
 
 def strategy_call(strategy, classifier_instances, ident, row):
-    logging.debug(f"Classifying CHEBI:{ident} ({row['name']})  {Chem.MolToSmiles(row['mol'])}")
+    logging.debug(f"Classifying CHEBI:{ident} ({row['name']})  {row['smiles']}")
+
     res = {"chebi_id": ident}
     start_time = time.perf_counter()
 
@@ -495,4 +496,4 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
 
 
 if __name__ == "__main__":
-    classify_chebi(["-v", 239, "-s", "fol-translated", "-p", "-l", "100", "-w", "0"], standalone_mode=False)
+    classify_chebi(["-v", 239, "-s", "algo", "-3", "-w", "0"], standalone_mode=False)
