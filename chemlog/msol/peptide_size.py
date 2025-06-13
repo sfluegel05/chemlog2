@@ -299,8 +299,42 @@ class Peptide(MSOLDefinition):
         bond_starts = [msol.Var1(f"b{i}a") for i in range(self.n_amino_acid_residues - 1)]
         bond_os = [msol.Var1(f"b{i}o") for i in range(self.n_amino_acid_residues - 1)]
         bond_ends = [msol.Var1(f"b{i}b") for i in range(self.n_amino_acid_residues - 1)]
+
+        bond_formulas = []
+        for i in range(1, self.n_amino_acid_residues):
+            f = msol.QuantifiedFormula(
+            msol.Quantifier.EXISTENTIAL,
+            [bond_ends[i-1]],
+            msol.NaryFormula(
+                msol.BinaryConnective.CONJUNCTION,
+                # b_b in a_j for some j <= i
+                [msol.NaryFormula(
+                    msol.BinaryConnective.DISJUNCTION,
+                    [msol.InSetFormula(bond_ends[i-1], aars[j]) for j in range(i + 1)]
+                ),
+                msol.QuantifiedFormula(
+                    msol.Quantifier.EXISTENTIAL,
+                    [bond_starts[i-1]],
+                    msol.NaryFormula(
+                        msol.BinaryConnective.CONJUNCTION,
+                        # b_a in a_i+1
+                        [msol.InSetFormula(bond_starts[i-1], aars[i]),
+                        msol.QuantifiedFormula(
+                            msol.Quantifier.EXISTENTIAL,
+                            [bond_os[i-1]],
+                            # AmideBondFO(b_a, b_o, b_b) or AmideBondFO(b_b, b_o, b_a)
+                            (msol.PredicateExpression(AmideBondFO().name(), [bond_starts[i-1], bond_os[i-1], bond_ends[i-1]])
+                                 | msol.PredicateExpression(AmideBondFO().name(),
+                                                            [bond_ends[i-1], bond_os[i-1], bond_starts[i-1]])
+                            )
+                        )]
+                    )
+                )]
+            )
+        )
+
         return msol.QuantifiedFormula(
-            msol.Quantifier.EXISTENTIAL, aars + bond_starts + bond_os + bond_ends,
+            msol.Quantifier.EXISTENTIAL, aars,
                 msol.NaryFormula(
                     msol.BinaryConnective.CONJUNCTION,
                     # AAR(a_i)
@@ -310,18 +344,7 @@ class Peptide(MSOLDefinition):
                     + [~msol.PredicateExpression(HasOverlap().name(), [aars[i], aars[j]])
                        for i in range(self.n_amino_acid_residues - 1) for j in
                        range(i + 1, self.n_amino_acid_residues)]
-                    # AmideBondFO(b_a, b_o, b_b) or AmideBondFO(b_b, b_o, b_a)
-                    + [msol.PredicateExpression(AmideBondFO().name(),[bond_starts[i], bond_os[i], bond_ends[i]])
-                       | msol.PredicateExpression(AmideBondFO().name(), [bond_ends[i], bond_os[i], bond_starts[i]])
-                       for i in range(self.n_amino_acid_residues - 1)]
-                    # b_a in a_{i+1}
-                    + [msol.InSetFormula(bond_starts[i], aars[i + 1]) for i in
-                       range(self.n_amino_acid_residues - 1)]
-                    # b_b in a_j for some j <= i
-                    + [msol.NaryFormula(
-                        msol.BinaryConnective.DISJUNCTION,
-                        [msol.InSetFormula(bond_ends[i], aars[j])
-                         for j in range(i + 1)]) for i in range(self.n_amino_acid_residues - 1)]
+                    + bond_formulas
                 )
             )
 

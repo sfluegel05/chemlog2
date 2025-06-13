@@ -45,25 +45,16 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
     @staticmethod
     def build_peptide_structure(n_amino_acids, n_atoms):
         # get qbf formula for peptide structure
+        logging.debug(f"Building peptide structure")
         amino_acids = [amino_acid_residue(n_atoms, [f"aar_{i}_{j}" for j in range(n_atoms)]) for i in
                        range(n_amino_acids)]
-        peptide_bonds = [exists_amide_subset(n_atoms, [f"pb_{i}_{j}" for j in range(n_atoms)]) for i in
-                         range(n_amino_acids - 1)]
         # aars do not overlap - each atom j only appears once (at most)
         pairwise_inequality = [
             qbf.BinaryFormula(f"aar_{i}_{j}", qbf.Connective.IMPLIES,
                               qbf.NegFormula(qbf.NaryFormula(qbf.Connective.OR, [
                                   f"aar_{k}_{j}" for k in range(n_amino_acids) if k != i])))
             for i in range(n_amino_acids - 1) for j in range(n_atoms)]
-        # peptide bond i overlaps aar i+1
-        bond_peptide_overlaps = [
-            qbf.NaryFormula(qbf.Connective.OR, [
-                qbf.BinaryFormula(f"pb_{i}_{j}", qbf.Connective.AND, f"aar_{i + 1}_{j}")
-                for j in range(n_atoms)
-            ])
-            for i in range(n_amino_acids - 1)
-        ]
-        # peptide bond i overlaps aar <= i
+
         # atom j from aar i+1 and atom l from aar k<i+1 have to be part of an amide bond
         # for any j, j belongs to aar i and for any l, j and l belong to an amide bond and j belongs to any aar < i
         peptide_bond_overlaps = [
@@ -83,6 +74,8 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
             ])
             for i in range(1, n_amino_acids)
         ]
+
+        logging.debug("Finished building peptide structure")
 
         return qbf.QuantifiedFormula(
             qbf.Quantifier.E,
@@ -112,6 +105,7 @@ class QBFPeptideSizeClassifierCAQE(Classifier):
         for n in range(2, 11):
             logging.debug(f"Running QBF for peptide size {n} with {n_atoms} atoms")
             target_formula = self.get_peptide_structure(n, n_atoms)
+            logging.debug(f"Target formula done")
             dimacs = [f"c Peptide structure {n}+ ({n_atoms} atoms)"]
             # get matrix
             matrix = target_formula
@@ -158,7 +152,9 @@ class QBFPeptideSizeClassifierDepQBFTranslated(QBFPeptideSizeClassifierDepQBF):
         }
 
     def build_peptide_structure(self, n_amino_acids, n_atoms):
+        logging.debug("Building peptide structure with translated definitions")
         peptide_msol = peptide_size.Peptide(n_amino_acids)
+        logging.debug(f"Peptide structure loaded, now translating to QBF")
         translator = QBFTranslator(n_atoms, self.peptide_definitions)
         return translator.visit(peptide_msol())
 
@@ -470,7 +466,6 @@ def building_block_example(smiles):
         formula = translator.visit(bb, var_indices={"uuu": u_index, "www": 0})
         dimacs = ["c \\exists X: BuildingBlock(X)"]
         dimacs.append(f"c Target formula: {formula}")
-        print(f"Target formula: {formula}")
 
         # add molecule to qbf
         mol_prop = mol_to_propositional(mol)
@@ -490,18 +485,20 @@ def building_block_example(smiles):
 def aar_example(smiles):
     mol = Chem.MolFromSmiles(smiles)
     x_vars = [f"x{i}" for i in range(mol.GetNumAtoms())]
-    classifier = QBFPeptideSizeClassifierDepQBFTranslated()
-    translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
-    formula = translator.visit(msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [msol.Var2("X")],
-                                                      peptide_size.AAR()(msol.Var2("X"))))
+    classifier = QBFPeptideSizeClassifierDepQBF()
+    #translator = QBFTranslator(mol.GetNumAtoms(), classifier.peptide_definitions)
+    #formula = translator.visit(msol.QuantifiedFormula(msol.Quantifier.EXISTENTIAL, [msol.Var2("X")],
+    #                                                  peptide_size.AAR()(msol.Var2("X"))))
+    formula = amino_acid_residue(mol.GetNumAtoms(), x_vars)
     dimacs = ["c \\exists X: AAR(X)"]
     dimacs.append(f"c Target formula: {formula}")
+    print(f"Target formula: {formula}")
 
     # add molecule to qbf
     mol_prop = mol_to_propositional(mol)
     mol_formula = qbf.NaryFormula(qbf.Connective.AND,
                                   [v for v in mol_prop[0]] + [qbf.NegFormula(v) for v in mol_prop[1]])
-    all_formula = qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula)
+    all_formula = qbf.QuantifiedFormula(qbf.Quantifier.E, x_vars, qbf.BinaryFormula(mol_formula, qbf.Connective.AND, formula))
     dimacs.append(f"c Molecule SMILES: {smiles}")
     dimacs.append(f"c Molecule description: {mol_formula}")
     dimacs.append(cnf_to_qdimacs(qbf_to_cnf(all_formula, use_tseytin=True, verbose=False), add_comments=False))
@@ -513,10 +510,10 @@ def aar_example(smiles):
 def di_plus_peptide_example(smiles):
     mol = Chem.MolFromSmiles(smiles)
     classifier = QBFPeptideSizeClassifierDepQBFTranslated()
-    formula = classifier.build_peptide_structure(2, mol.GetNumAtoms())
+    formula = classifier.build_peptide_structure(3, mol.GetNumAtoms())
     dimacs = ["c \\exists X, Y: AAR(X) & AAR(Y) & X \\cap Y = \\emptyset"]
-    dimacs.append(f"c Target formula: {formula}")
-
+    #dimacs.append(f"c Target formula: {formula}")
+    logging.debug(f"Target formula: {formula}")
     # add molecule to qbf
     mol_prop = mol_to_propositional(mol)
     mol_formula = qbf.NaryFormula(qbf.Connective.AND,
@@ -545,6 +542,7 @@ if __name__ == "__main__":
     glycyl_glycyl_glycine = "NCC(=O)NCC(=O)NCC(=O)O"  # CHEBI:63961
     sulfocysteinyl_glycine = "S(=O)(=O)(O)N[C@@H](CS)C(=O)NCC(=O)O"  # CHEBI:195396
     classifier = QBFPeptideSizeClassifierDepQBFTranslated(load_formulas=True)
-    #building_block_example("C(=O)N")
-    print(classifier.classify(Chem.MolFromSmiles("O=C(N[C@H](C(=O)OC)CC(C)C)C(=O)N")))
+    logging.basicConfig(level=logging.DEBUG)
+    di_plus_peptide_example(piperazine)
+    #print(classifier.classify(Chem.MolFromSmiles("O=C(N[C@H](C(=O)OC)CC(C)C)C(=O)N")))
 
