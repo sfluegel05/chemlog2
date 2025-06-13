@@ -332,6 +332,7 @@ class Peptide(MSOLDefinition):
                 )]
             )
         )
+            bond_formulas.append(f)
 
         return msol.QuantifiedFormula(
             msol.Quantifier.EXISTENTIAL, aars,
