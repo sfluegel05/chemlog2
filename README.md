@@ -1,17 +1,24 @@
 ChemLog is a framework for rule-based ontology extension. 
 This repository implements a classification of peptides on the ChEBI and PubChem datasets.
 
-3 methods for classification are implemented: 
-1. Using Monadic Second-Order Logic (MSOL) formulas and the MSOL reasoner [MONA](https://www.brics.dk/mona/index.html)
-2. Using First-Order Logic (FOL) formulas and a custom FOL model checker
-3. Using an algorithmic implementation
+
+## How are peptides classified?
+
+4 methods for classification are implemented: 
+1. Using Monadic Second-Order Logic (MSOL) formulas with the MSOL model finder [MONA](https://www.brics.dk/mona/index.html)
+2. Turning an MSOL model finding problem into a QBF satisfiability problem and solving that with [CAQE](https://github.com/ltentrup/caqe/tree/master) or [DepQBF](https://github.com/lonsing/depqbf), using the [Bloqqer](https://fmv.jku.at/bloqqer/) preprocessor.
+3. Turning an MOSL model finding problem partially into First-Order Logic (FOL) and solving that with a custom FOL model checker (since not all MSOL axioms are translatable, the non-translatable parts are calculated algorithmically).
+4. Using an algorithmic implementation
+
+If you are just interested in the results, we recommend choosing the algorithmic implementation, as it is the fastest and can handle complex molecules.
 
 The classification covers the following aspects:
-1. Number of amino acids (in MSOL / FOL: up to 10)
+1. Number of amino acids (up to 10, except for the algorithmic method, which covers arbitrary sizes)
 2. Charge category (either salt, anion, cation, zwitterion or neutral)
 3. Proteinogenic amino acids present
+4. Emericellamides and 2,5-diketopiperazines
 
-If the corresponding flag is set, ChemLog will also return the ChEBI classes that match this classification. Currently supported are:
+ChemLog will also return the ChEBI classes that match this classification. Currently supported are:
 
 | ChEBI ID | name |
 | --- | --- |
@@ -36,9 +43,9 @@ If the corresponding flag is set, ChemLog will also return the ChEBI classes tha
 
 
 
-All implementations are based on the same natural language definitions and have been developed jointly. Therefore, it is expected that all methods yield the same result. If you make a different experience, please open an issue. If you are just interested in the results, we recommend using the algorithmic implementation, as it is the fastest one.
+All implementations are based on the same natural language definitions and have been developed jointly. Therefore, it is expected that all methods yield the same result. If you make a different experience, please open an issue.
 
-If you face problems using ChemLog or have other questions, feel free to open an issue.
+If you face problems using ChemLog or have other questions, feel free to open an issue as well.
 
 ## Installation
 
@@ -53,95 +60,11 @@ If you want to use the MONA reasoner, you have to install it separately (the cla
 
 ## Run the classification
 
-ChemLog provides a command line interface for the classification. Results are in JSON format for each run, alongside a log and a config file.
+ChemLog provides a command line interface for the classification. Results are in JSON format for each run, alongside a log and a config file. Currently, classification of ChEBI and PubChem data is supported. Download and preprocessing of the data are handled automatically. For instances, the following command classifies the 1,000 smallest peptides in ChEBI with the algorithmic method:
+    
+    python -m chemlog classify-chebi --chebi-version 239 --strategy algo --only-peptides --n-molecules 1000
 
-**Command**: 
-  
-    python -m chemlog classify
+For more details on the available command line options run
 
-  Apply the algorithmic implementation to ChEBI data.
-
-Options:
-
-    -v, --chebi-version INTEGER  ChEBI version  [required]
-    -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
-                                 ChEBI classes.
-    -c, --return-chebi-classes   Return ChEBI classes
-    -n, --run-name TEXT          Results will be stored at
-                                 results/%y%m%d_%H%M_{run_name}/
-    -d, --debug-mode             Logs at debug level
-    -o, --additional-output      Returns intermediate steps in output, useful
-                                 for explainability and verification
-    -3, --only-3star             Only consider 3-star molecules
-    --help                       Show this message and exit.
-
-**Command**: 
-
-    python -m chemlog classify-pubchem
-
-  Apply the algorithmic implementation to PubChem data.
-
-Options:
-
-    -f, --from-batch INTEGER    Start at this PubChem batch (each batch consists of 500,000 ids)
-    -t, --to-batch INTEGER      End at this PubChem batch (exclusive)
-    -c, --return-chebi-classes  Return assigned ChEBI classes
-    -m, --molecules TEXT        List of PubChem IDs to classify. Default: all
-                                PubChem entries.
-    --help                      Show this message and exit.
-
-**Command**: 
-
-    python -m chemlog classify-fol
-
-  Apply the FOL implementation to PubChem data.
-
-Options:
-
-    -v, --chebi-version INTEGER  ChEBI version  [required]
-    -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
-                                 ChEBI classes.
-    -c, --return-chebi-classes   Return ChEBI classes
-    -n, --run-name TEXT          Results will be stored at
-                                 results/%y%m%d_%H%M_{run_name}/
-    -d, --debug-mode             Logs at debug level
-    -o, --additional-output      Returns intermediate steps in output, useful
-                                 for explainability and verification
-    -3, --only-3star             Only consider 3-star molecules
-    --help                       Show this message and exit.
-
-**Command**: 
-
-    python -m chemlog classify-msol
-
-  Apply the MSOL implementation to PubChem data.
-
-Options:
-
-    -v, --chebi-version INTEGER  ChEBI version  [required]
-    -m, --molecules TEXT         List of ChEBI IDs to classify. Default: all
-                                 ChEBI classes.
-    -n, --run-name TEXT          Results will be stored at
-                                 results/%y%m%d_%H%M_{run_name}/
-    -d, --debug-mode             Logs at debug level
-    -p, --only-peptides          Only consider peptide molecules
-    --help                       Show this message and exit.
-
-**Command**: 
-
-    python -m chemlog verify
-
-  Given a results file, run the FOL classification for the same classes. This is typically used to check if the algorithmic and FOL classifications match for certain classes.
-
-Options:
-   
-    -v, --chebi-version INTEGER  ChEBI version  [required]
-    -r, --results-dir TEXT       Directory where results.json to analyse is
-                                 located  [required]
-    -d, --debug-mode             Returns additional states
-    -m, --molecules TEXT         List of ChEBI IDs to verify. Default: all ChEBI
-                                 classes.
-    -3, --only-3star             Only consider 3-star molecules
-    --help                       Show this message and exit.
-
+    python -m chemlog --help
 
