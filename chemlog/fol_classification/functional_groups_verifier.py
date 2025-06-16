@@ -1,15 +1,19 @@
 import logging
 import os
+from inspect import signature
 
 from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic import logic, logic_utils
 from rdkit import Chem
 
+from chemlog.base_classifier import Classifier
+from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.msol import peptide_size
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 
 
-class FunctionalGroupsVerifier:
+class FunctionalGroupsVerifier(Classifier):
 
     def __init__(self):
         with open(os.path.join("data", "fol_specifications", "functional_groups.tptp"), "r") as f:
@@ -19,6 +23,8 @@ class FunctionalGroupsVerifier:
         # take right-hand side of formulas
         self.functional_group_defs = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.functional_group_defs.values():
+            formula.right = normalize_fol_formula(formula.right)
         with open(os.path.join("data", "fol_specifications", "functional_group_helpers.tptp"), "r") as f:
             tptp_raw = f.readlines()
         tptp_parser = TPTPParser()
@@ -26,6 +32,8 @@ class FunctionalGroupsVerifier:
         # take right-hand side of formulas
         self.functional_group_helpers = {f[0].formula.left.predicate.value:
                                     f[0].formula for f in tptp_parsed if len(f) > 0}
+        for formula in self.functional_group_helpers.values():
+            formula.right = normalize_fol_formula(formula.right)
 
 
     def verify_functional_groups(self, mol: Chem.Mol, expected_groups: dict):
@@ -56,8 +64,8 @@ class FunctionalGroupsVerifier:
         # only return positive result if **all** functional groups have been found
         return ModelCheckerOutcome.MODEL_FOUND if all_successful else ModelCheckerOutcome.NO_MODEL, proof_attempts
 
-    def classify_functional_groups(self, mol: Chem.Mol):
-        universe, extensions = mol_to_fol_atoms(mol)
+    def classify(self, mol: Chem.Mol, fol_structure=None, *args, **kwargs):
+        universe, extensions = mol_to_fol_atoms(mol) if fol_structure is None else fol_structure
         model_checker = ModelChecker(
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
                                                          for pred, formula in self.functional_group_helpers.items()})
@@ -91,10 +99,20 @@ class FunctionalGroupsVerifier:
                     group_atoms = [assigned_dict[v.symbol] for v in target_formula.left.arguments]
                     functional_groups[group].append(group_atoms)
 
-        return functional_groups
+        return functional_groups, None
 
 
-if __name__ == "__main__":
-    from itertools import permutations
+class FOLFunctionalGroupsClassifierTranslated(FunctionalGroupsVerifier):
 
-    print(list(permutations(range(5), 3)))
+    @staticmethod
+    def get_structure_formulas():
+        defs_compiled = dict()
+        for definition in [peptide_size.AmideBondFO(),
+                           peptide_size.AminoGroupFO(), peptide_size.CarboxyResidueFO(),
+                           peptide_size.AAR()]:
+            sig = signature(definition.__call__)
+            variables = []
+            for p_name, param in sig.parameters.items():
+                variables.append(param.annotation(param.name))
+            defs_compiled[logic.PredicateExpression(definition.name(), variables)] = definition(*variables)
+        return defs_compiled

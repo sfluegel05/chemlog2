@@ -2,6 +2,14 @@ import logging
 
 from rdkit import Chem
 
+from chemlog.base_classifier import Classifier
+
+
+class AlgProteinogenicsClassifier(Classifier):
+
+    def classify(self, mol: Chem.Mol, amino_ns=None, carboxys=None, *args, **kwargs):
+        return get_proteinogenic_amino_acids(mol, amino_ns, carboxys)[:2]
+
 def get_proteinogenic_amino_acids(mol: Chem.Mol, amino_ns, carboxys):
     try:
         Chem.rdCIPLabeler.AssignCIPLabels(mol)

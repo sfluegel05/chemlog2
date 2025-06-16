@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 
 from chemlog.fol_classification.model_checking import ModelCheckerOutcome, AbstractModelChecker
@@ -18,18 +19,19 @@ class MonaModelChecker(AbstractModelChecker):
         super().__init__(universe, predicate_extensions, predicate_definitions)
 
     def find_model(self, formula: str, timeout=0):
-        with open("tmp.mona", "w") as f:
+        pid = os.getpid()
+        mona_path = os.path.join("tmp", f"{pid}.mona")
+        with open(mona_path, "w") as f:
             f.write(self.extensions + self.definitions + formula)
         res = subprocess.run(
-            ["mona", "-t", "-q", "tmp.mona"],
+            ["mona", "-t", "-q", mona_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
         )
-        logging.debug(res.stdout)
         if f"A satisfying example of least length" not in res.stdout:
             if "unsatisfiable" in res.stdout:
-                logging.info("Formula is unsatisfiable")
+                logging.debug("Formula is unsatisfiable")
                 return ModelCheckerOutcome.NO_MODEL, None
             else:
                 logging.warning("An error occurred: " + res.stdout.strip("\n"))
@@ -40,7 +42,7 @@ class MonaModelChecker(AbstractModelChecker):
             total_time = total_time[0][13:]
         else:
             total_time = "?"
-        logging.info(f"Model found (internal time: {total_time})")
+        logging.debug(f"Model found (internal time: {total_time})")
         model_size = res.stdout.split("A satisfying example of least length (")[
             1
         ].split(")")[0]

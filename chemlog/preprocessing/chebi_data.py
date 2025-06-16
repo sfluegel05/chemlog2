@@ -22,8 +22,6 @@ class ChEBIData:
         self.chebi = self.process_chebi()
         # processed: dataframe that combines chebi data with mols from sdf file
         self.processed = self.process_data()
-        # hierarchy graph: networkx DiGraph with relations between ChEBI classes
-        self.hierarchy_graph = self.build_hierarchy_graph()
 
     @property
     def base_dir(self):
@@ -104,13 +102,14 @@ class ChEBIData:
         if not os.path.exists(self.processed_path):
             res = {}
             for mol_id, mol in self.sdf_file_to_mol():
+                if mol_id not in self.chebi.keys():
+                    continue
                 if "smiles" not in self.chebi[mol_id] or self.chebi[mol_id]["smiles"] is None:
                     # entries with mol but without smiles are usually [ ]n specifications
                     continue
                 if any(atom.GetAtomicNum() == 0 for atom in mol.GetAtoms()):
                     continue
-                if mol_id in self.chebi.keys():
-                    res[mol_id] = {"mol": mol, **self.chebi[mol_id]}
+                res[mol_id] = {"mol": mol, **self.chebi[mol_id]}
             df = pd.DataFrame.from_dict(res, orient="index")
             df.to_pickle(self.processed_path)
         else:
@@ -118,7 +117,7 @@ class ChEBIData:
         return df
 
     def build_hierarchy_graph(self):
-        print(f"Building hierarchy graph")
+        logging.debug(f"Building hierarchy graph")
         start_time = time.perf_counter()
         g = nx.DiGraph()
         g.add_nodes_from(self.chebi.keys())
@@ -126,12 +125,12 @@ class ChEBIData:
             if "parents" in row:
                 for parent in row["parents"]:
                     g.add_edge(parent, chebi_id)
-        print(f"Built hierarchy graph in {time.perf_counter() - start_time} seconds")
+        logging.debug(f"Built hierarchy graph in {time.perf_counter() - start_time:.2f} seconds")
         return g
 
     def get_trans_hierarchy(self):
         if not os.path.exists(self.trans_hierarchy_path):
-            g = self.hierarchy_graph
+            g = self.build_hierarchy_graph()
             with open(self.trans_hierarchy_path, "wb") as f:
                 pickle.dump(nx.transitive_closure(g), f)
             return g
