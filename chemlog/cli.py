@@ -53,48 +53,48 @@ def resolve_chebi_classes(classification):
     charge_category = classification[ClassifierKeys.CHARGE.name]
     res = []
     if charge_category == ChargeCategories.SALT.name:
-        res.append(24866)  # salt (there is no class peptide salt)
+        res.append("24866")  # salt (there is no class peptide salt)
     elif charge_category == ChargeCategories.ANION.name:
-        res.append(25696)
+        res.append("25696")
     elif charge_category == ChargeCategories.CATION.name:
-        res.append(25697)
+        res.append("25697")
     elif charge_category == ChargeCategories.ZWITTERION.name:
-        res.append(27369)
+        res.append("27369")
     if n_amino_acid_residues >= 2:
         if charge_category == ChargeCategories.ANION.name:
             # peptide anion
-            res.append(60334)
+            res.append("60334")
         elif charge_category == ChargeCategories.CATION.name:
             # peptide cation
-            res.append(60194)
+            res.append("60194")
         elif charge_category == ChargeCategories.ZWITTERION.name:
-            res.append(60466)
+            res.append("60466")
             if n_amino_acid_residues == 2:
                 # zwitterion, peptide zwitterion, dipeptide zwitterion
-                res.append(90799)
+                res.append("90799")
             if n_amino_acid_residues == 3:
-                res.append(155837)
+                res.append("155837")
         elif charge_category == ChargeCategories.NEUTRAL.name:
-            res.append(16670)
+            res.append("16670")
             if n_amino_acid_residues == 2:
-                res.append(46761)
+                res.append("46761")
             if n_amino_acid_residues == 3:
-                res.append(47923)
+                res.append("47923")
             if n_amino_acid_residues == 4:
-                res.append(48030)
+                res.append("48030")
             if n_amino_acid_residues == 5:
-                res.append(48545)
+                res.append("48545")
             if n_amino_acid_residues >= 10:
-                res.append(15841)
+                res.append("15841")
             else:
                 # oligo
-                res.append(25676)
+                res.append("25676")
     if ClassifierKeys.SUBSTRUCT.name in classification:
         substruct_classification = classification[ClassifierKeys.SUBSTRUCT.name]
         if "emericellamide" in substruct_classification and substruct_classification["emericellamide"]:
-            res.append(64372)
+            res.append("64372")
         if "2,5-diketopiperazines" in substruct_classification and substruct_classification["2,5-diketopiperazines"]:
-            res.append(65061)
+            res.append("65061")
 
     return res
 
@@ -152,15 +152,18 @@ def classify_pubchem(from_batch, to_batch, return_chebi_classes, molecules):
         json_logger.save_items(f"classify_pubchem{batch_id:03d}", results)
 
 
-def strategy_call(strategy, classifier_instances, ident, row):
+def strategy_call_chebi(strategy, classifier_instances, ident, row):
     logging.debug(f"Classifying CHEBI:{ident} ({row['name']})  {row['smiles']}")
 
-    res = {"chebi_id": ident}
+    res = strategy_call(strategy, classifier_instances, row["mol"])
+    res["chebi_id"] = ident
+    return res
+
+def strategy_call(strategy, classifier_instances, mol):
+    res = dict()
     start_time = time.perf_counter()
-
     if strategy == 'fol':
-        fol_structure = mol_to_fol_atoms(row["mol"])
-
+        fol_structure = mol_to_fol_atoms(mol)
     for key in ClassifierKeys:
         if key in classifier_instances:
             args = []
@@ -179,7 +182,7 @@ def strategy_call(strategy, classifier_instances, ident, row):
                     args += [res[f"{ClassifierKeys.SIZE.name}_additional"]['amino_residue'],
                              res[f"{ClassifierKeys.SIZE.name}_additional"]['carboxy_residue']]
 
-            classification, additional_output = classifier_instances[key].classify(row["mol"], *args)
+            classification, additional_output = classifier_instances[key].classify(mol, *args)
             logging.debug(f"Classification for {key.name}: {classification}")
             res[key.name] = classification
             if additional_output is not None:
@@ -235,7 +238,7 @@ CLASSIFIERS = {
 
 
 @cli.command(
-    help="Classify ChEBI molecules (only according to their number of amino acids) using quantified boolean formulas (QBF)")
+    help="Classify ChEBI molecules")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
 @click.option('--strategy', '-s', type=click.Choice(list(CLASSIFIERS.keys()), case_sensitive=False), default='algo',
               help='Strategy to use for classification.')
@@ -349,6 +352,59 @@ def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False
     data_filtered.sort_values("smiles_length", inplace=True, ascending=True)
     return data_filtered
 
+@cli.command(
+    help="Classify SMILES")
+@click.option('--strategy', '-s', type=click.Choice(list(CLASSIFIERS.keys()), case_sensitive=False), default='algo',
+              help='Strategy to use for classification.')
+@click.option('--smiles', '-s', multiple=True, help='SMILES strings to predict')
+@click.option('--smiles-file', '-f', type=click.Path(exists=True), help='File containing SMILES strings (one per line)')
+@click.option('--run-name', '-n', type=str, help='Results will be stored at results/%y%m%d_%H%M_{strategy}_{run_name}/')
+@click.option('--debug-mode', '-d', is_flag=True, help='Logs at debug level')
+def classify_smiles(strategy, smiles, smiles_file, run_name, debug_mode):
+    json_logger = TimestampedLogger(None, f"{strategy}_{run_name}" if run_name is not None else strategy, debug_mode)
+    # Collect SMILES strings from arguments and/or file
+    smiles_list = list(smiles)
+    if smiles_file:
+        with open(smiles_file, 'r') as f:
+            smiles_list.extend([line.strip() for line in f if line.strip()])
+
+    if not smiles_list:
+        click.echo("No SMILES strings provided. Use --smiles or --smiles-file options.")
+        return
+    json_logger.start_run(f"classify_{strategy}", {"strategy": strategy, "smiles": smiles_list,
+                                                   "run_name": run_name, "debug_mode": debug_mode})
+
+    logging.info(f"Classifying {len(smiles_list)} molecules")
+
+    classifier_instances = {
+        k: v() for k, v in CLASSIFIERS[strategy].items()
+    }
+    # no multiprocessing
+    results = []
+
+    for i, smiles in tqdm.tqdm(enumerate(smiles_list)):
+        mol = _smiles_to_mol(smiles)
+        if mol is None:
+            results.append(None)
+        else:
+            results.append(strategy_call(strategy, classifier_instances, mol))
+        if len(smiles_list) < 100 or ((i+1) % (len(smiles_list) // 100)) == 0:
+            json_logger.save_items(f"classify_{strategy}", results)
+
+    json_logger.save_items(f"classify_{strategy}", results)
+    for classifier in classifier_instances.values():
+        classifier.on_finish()
+
+def _smiles_to_mol(smiles):
+    mol = Chem.MolFromSmiles(smiles, sanitize=False)
+    if mol is not None:
+        # turn aromatic bond types into single/double
+        try:
+            Chem.Kekulize(mol)
+        except Chem.KekulizeException as e:
+            logging.debug(f"{Chem.MolToSmiles(mol)} - {e}")
+        return mol
+    return mol
 
 @cli.command(help="Verify results from a `classify` run using first-order logic (FOL)")
 @click.option('--chebi-version', '-v', type=int, required=True, help='ChEBI version')
