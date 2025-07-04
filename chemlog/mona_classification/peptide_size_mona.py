@@ -113,8 +113,11 @@ class MonaPeptideSizeClassifierCompiled(MonaPeptideSizeClassifier):
         variables = peptide_size_formula.variables
         so_variables = [v for v in variables if isinstance(v, msol.Var2)]
         fo_variables = [v for v in variables if isinstance(v, msol.Var1)]
-        res = f"var2 {','.join(self.compiler.visit(v) for v in so_variables)};\n"
-        res += f"var1 {','.join(self.compiler.visit(v) for v in fo_variables)};\n"
+        res = ""
+        if len(so_variables) > 0:
+            res = f"var2 {','.join(self.compiler.visit(v) for v in so_variables)};\n"
+        if len(fo_variables) > 0:
+            res += f"var1 {','.join(self.compiler.visit(v) for v in fo_variables)};\n"
         res += self.compiler.visit(peptide_size_formula.formula) + ";\n"
         return res
 
@@ -124,4 +127,8 @@ if __name__ == "__main__":
     classifier = MonaPeptideSizeClassifierCompiled()
     from rdkit import Chem
     mol = Chem.MolFromSmiles("NCC(=O)NCC(=O)NCC(=O)O")
-    print(classifier.classify(mol))
+    #print(classifier.classify(mol))
+    print(classifier.load_predicate_definitions())
+    print(classifier.build_peptide_structure(2))
+    print("---")
+    print(classifier.build_peptide_structure(3))
