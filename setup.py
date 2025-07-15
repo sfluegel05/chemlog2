@@ -8,7 +8,7 @@ setup(
     name='chemlog',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    version='1.0.4',
+    version='1.0.5',
     packages=find_packages(),
     install_requires=[
         'fastobo',
@@ -24,7 +24,7 @@ setup(
         'tqdm',
         'multiprocess',
     ],
-    author='Simon Flügel',
+    author='sfluegel05',
     author_email='simon.fluegel@uos.de',
     description='Peptide classifier for ChEBI / PubChem',
     license='GNU General Public License v3.0',
