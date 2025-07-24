@@ -1,3 +1,4 @@
+import abc
 import enum
 
 from gavel.dialects.base.compiler import Compiler
@@ -167,3 +168,21 @@ class MSOLCompiler(Compiler):
 
     def visit_nary_formula(self, formula: NaryFormula):
         raise NotImplementedError
+
+
+class MSOLDefinition(abc.ABC):
+    """
+    forall x1, ..., xn: self.name(x1, ..., xn) <=> self()
+    """
+
+    __visit_name__ = "msol_definition"
+
+    def name(self):
+        pass
+
+    @staticmethod
+    def __call__(*args, **kwargs) -> QuantifiedFormula:
+        """
+        Returns the right-hand side of the MSOL definition as a quantified formula.
+        """
+        pass

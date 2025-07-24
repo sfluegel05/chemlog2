@@ -1,22 +1,5 @@
-import abc
-
 from chemlog.msol import msol
-
-
-class MSOLDefinition(abc.ABC):
-    """
-    forall x1, ..., xn: self.name(x1, ..., xn) <=> self()
-    """
-
-    def name(self):
-        pass
-
-    @staticmethod
-    def __call__(*args, **kwargs) -> msol.QuantifiedFormula:
-        """
-        Returns the right-hand side of the MSOL definition as a quantified formula.
-        """
-        pass
+from chemlog.msol.msol import MSOLDefinition
 
 
 class HasOverlap(MSOLDefinition):
