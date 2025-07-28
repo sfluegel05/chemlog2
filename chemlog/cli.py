@@ -27,6 +27,7 @@ from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier
 from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
 from chemlog.fol_classification.substruct_verifier import SubstructVerifier
 from chemlog.mona_classification.peptide_size_mona import MonaPeptideSizeClassifier, MonaPeptideSizeClassifierCompiled
+from chemlog.mona_classification.charge_mona import MonaChargeClassifier
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 from chemlog.preprocessing.pubchem_data import PubChemData
@@ -204,7 +205,8 @@ class ClassifierKeys(enum.Enum):
 
 CLASSIFIERS = {
     'mona': {
-        ClassifierKeys.SIZE: MonaPeptideSizeClassifierCompiled,
+        #ClassifierKeys.SIZE: MonaPeptideSizeClassifierCompiled,
+        ClassifierKeys.CHARGE: MonaChargeClassifier,
     },
     'mona-from-file': {
         ClassifierKeys.SIZE: MonaPeptideSizeClassifier,
@@ -276,7 +278,7 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
         logging.info("Running in single-threaded mode")
         results = []
         for i, (id, row) in tqdm.tqdm(enumerate(data_filtered.iterrows())):
-            results.append(strategy_call(strategy, classifier_instances, id, row))
+            results.append(strategy_call_chebi(strategy, classifier_instances, id, row))
             if len(data_filtered) < 100 or ((i+1) % (len(data_filtered) // 100)) == 0:
                 json_logger.save_items(f"classify_{strategy}", results)
 

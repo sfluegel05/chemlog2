@@ -66,12 +66,11 @@ class CarbonFragment(MSOLDefinition):
 
     @staticmethod
     def __call__(x: msol.Var2) -> msol.QuantifiedFormula:
-        # pred CarbonFragment(var2 X) = CarbonConnected(X) & ~ex2 Y: (X sub Y & X ~= Y & CarbonConnected(Y));
+        # pred CarbonFragment(var2 X) = CarbonConnected(X) & ~ex2 Y: (X sub Y & CarbonConnected(Y));
         y = msol.Var2("Y")
         return msol.PredicateExpression(CarbonConnected().name(), [x]) & ~msol.QuantifiedFormula(
             msol.Quantifier.EXISTENTIAL, [y],
             msol.SetSetFormula(x, msol.SetSetOperator.SUBSET, y)
-            & msol.SetSetFormula(x, msol.SetSetOperator.SET_NEQ, y)
             & msol.PredicateExpression(CarbonConnected().name(), [y])
         )
 
@@ -284,6 +283,7 @@ class Peptide(MSOLDefinition):
         bond_ends = [msol.Var1(f"b{i}b") for i in range(self.n_amino_acid_residues - 1)]
 
         bond_formulas = []
+        # b_(i-1)_b in a_j for some j <= i & b_(i-1)_a in a_i & amide_bond(b_(i-1)_a, b_(i-1)_o, b_(i-1)_b) or amide_bond(b_(i-1)_b, b_(i-1)_o, b_(i-1)_a)
         for i in range(1, self.n_amino_acid_residues):
             f = msol.QuantifiedFormula(
             msol.Quantifier.EXISTENTIAL,
@@ -313,10 +313,10 @@ class Peptide(MSOLDefinition):
                         )]
                     )
                 )]
-            )
-        )
+            ))
             bond_formulas.append(f)
 
+        # AAR(a_i) & ~HasOverlap(a_i, a_j) &
         return msol.QuantifiedFormula(
             msol.Quantifier.EXISTENTIAL, aars,
                 msol.NaryFormula(

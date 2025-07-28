@@ -1,4 +1,7 @@
+import logging
+
 from rdkit import Chem
+
 
 def mol_to_msol(mol: Chem.Mol):
     lines = []
@@ -20,16 +23,34 @@ def mol_to_msol(mol: Chem.Mol):
         )
     lines[2] = f"var2 {','.join(element_symbols)}"
     # charges
-    lines.append(f"var2 Charge0, ChargeP, ChargeN")
-    lines.append(
-        f"Charge0 = {{{','.join([str(i) for i, atom in enumerate(mol.GetAtoms()) if atom.GetFormalCharge() == 0])}}}"
-    )
+    lines.append(f"var2 ChargeP, ChargeN")
     lines.append(
         f"ChargeN = {{{','.join([str(i) for i, atom in enumerate(mol.GetAtoms()) if atom.GetFormalCharge() < 0])}}}"
     )
     lines.append(
         f"ChargeP = {{{','.join([str(i) for i, atom in enumerate(mol.GetAtoms()) if atom.GetFormalCharge() > 0])}}}"
     )
+    # exact charges (collect all atoms with the same charge)
+    lines.append(f"var2 ChargeM3, ChargeM2, ChargeM1, Charge0, Charge1, Charge2, Charge3")
+    for charge in range(-3, 4):
+        charge_predicate = f"ChargeM{-charge}" if charge < 0 else f"Charge{charge}"
+        lines.append(
+            f"{charge_predicate} = {{{','.join([str(i) for i, atom in enumerate(mol.GetAtoms()) if atom.GetFormalCharge() == charge])}}}"
+        )
+    charge_atoms = [atom for atom in mol.GetAtoms() if atom.GetFormalCharge() != 0]
+    charges, charge_formulas = [], []
+    while len(charge_atoms) > 0:
+        charge = charge_atoms[0].GetFormalCharge()
+        if charge < -2 or charge > 2:
+            logging.warning(f"Unexpected charge {charge} in molecule {Chem.MolToSmiles(mol)}. Only charges -2, -1, +1, +2 are supported.")
+        charge_predicate = f"Charge{charge}" if charge >= 0 else f"ChargeM{-charge}"
+        charges.append(charge_predicate)
+        charge_formulas.append(
+            f"{charge_predicate} = {{{','.join([str(i) for i, atom in enumerate(mol.GetAtoms()) if atom.GetFormalCharge() == charge])}}}"
+        )
+        charge_atoms = [atom for atom in charge_atoms if atom.GetFormalCharge() != charge]
+    lines += charge_formulas
+
     # h counts
     hydrogen_counts = [atom.GetTotalNumHs() for atom in mol.GetAtoms()]
     h_preds = {i: f"Has{i}Hs" for i in range(5)}
@@ -76,4 +97,4 @@ def mol_to_msol(mol: Chem.Mol):
         f"& {'~' if net_charge <= 0 else ''}NetChargeP"
     )
 
-    return len(mol.GetAtoms()), ";\n".join(lines) + ";"
+    return len(mol.GetAtoms()), ";\n".join(lines) + ";\n"

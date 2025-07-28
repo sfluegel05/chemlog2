@@ -28,6 +28,10 @@ class MONACompiler(msol.MSOLCompiler):
             return "=>"
         elif connective == msol.BinaryConnective.BIIMPLICATION:
             return "<=>"
+        elif connective == msol.BinaryConnective.NEQ:
+            return "~="
+        elif connective == msol.BinaryConnective.EQ:
+            return "="
         else:
             raise NotImplementedError(f"Binary connective {connective} not supported in MONA Compiler.")
 
@@ -56,6 +60,8 @@ class MONACompiler(msol.MSOLCompiler):
             return f"({self.visit(formula.left)} {self.visit(formula.operator)} {self.visit(formula.right)})"
 
     def visit_predicate_expression(self, expression: msol.PredicateExpression):
+        if len(expression.arguments) == 0:
+            return expression.predicate
         return f"{expression.predicate}({', '.join(self.visit(arg) for arg in expression.arguments)})"
 
     def visit_variable(self, variable: msol.Variable):
