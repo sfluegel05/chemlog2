@@ -74,6 +74,17 @@ class QBFTranslator(msol.MSOLCompiler):
         raise AssertionError(f"Variable {variable} has to be specified as first-order or second-order.")
 
     def visit_binary_formula(self, formula: msol.BinaryFormula, var_indices=None):
+        if formula.operator == msol.BinaryConnective.EQ:
+            # verum and falsum dont have any meaning by themselves
+            if var_indices[formula.left.symbol] == var_indices[formula.right.symbol]:
+                return "verum"
+            else:
+                return qbf.BinaryFormula("falsum", qbf.Connective.AND, qbf.NegFormula("falsum"))
+        if formula.operator == msol.BinaryConnective.NEQ:
+            if var_indices[formula.left.symbol] == var_indices[formula.right.symbol]:
+                return qbf.BinaryFormula("falsum", qbf.Connective.AND, qbf.NegFormula("falsum"))
+            else:
+                return "verum"
         return qbf.BinaryFormula(self.visit(formula.left, var_indices=var_indices), self.visit(formula.operator, var_indices=var_indices), self.visit(formula.right, var_indices=var_indices))
 
     def visit_predicate_expression(self, expression: msol.PredicateExpression, var_indices=None):

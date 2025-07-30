@@ -31,6 +31,7 @@ from chemlog.mona_classification.charge_mona import MonaChargeClassifier
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 from chemlog.preprocessing.pubchem_data import PubChemData
+from chemlog.qbf_classification.charge_qbf import QBFChargeClassifier
 from chemlog.qbf_classification.peptide_size_qbf import QBFPeptideSizeClassifierDepQBF, QBFPeptideSizeClassifierCAQE, \
     QBFPeptideSizeClassifierDepQBFTranslated
 from chemlog.timestamped_logger import TimestampedLogger
@@ -205,7 +206,7 @@ class ClassifierKeys(enum.Enum):
 
 CLASSIFIERS = {
     'mona': {
-        #ClassifierKeys.SIZE: MonaPeptideSizeClassifierCompiled,
+        ClassifierKeys.SIZE: MonaPeptideSizeClassifierCompiled,
         ClassifierKeys.CHARGE: MonaChargeClassifier,
     },
     'mona-from-file': {
@@ -215,7 +216,8 @@ CLASSIFIERS = {
         ClassifierKeys.SIZE: QBFPeptideSizeClassifierCAQE,
     },
     'qbf-depqbf': {
-        ClassifierKeys.SIZE: QBFPeptideSizeClassifierDepQBF,
+        #ClassifierKeys.SIZE: QBFPeptideSizeClassifierDepQBF,
+        ClassifierKeys.CHARGE: QBFChargeClassifier,
     },
     'qbf-depqbf-translated': {
         ClassifierKeys.SIZE: QBFPeptideSizeClassifierDepQBFTranslated,

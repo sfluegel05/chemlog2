@@ -6,7 +6,7 @@ def get_atom_pvar(atom_index: int, element_number: int):
     return f"{atom_index}_{element}"
 
 def get_charge_pvar(atom_index: int, charge: int):
-    charge_symbol = f"chargeM{-charge}" if charge < 0 else f"charge{charge}"
+    charge_symbol = f"ChargeM{-charge}" if charge < 0 else f"Charge{charge}"
     return f"{atom_index}_{charge_symbol}"
 
 def get_h_count_pvar(atom_index: int, h_count: int):
@@ -22,7 +22,7 @@ def get_bond_type_pvar(left_index: int, right_index: int, bond_type: Chem.BondTy
 def mol_to_propositional(mol: Chem.Mol):
     # turn molecule into propositional literals
     relevant_elements = [1, 6, 7, 8]
-    relevant_charges = [-1]
+    relevant_charges = [-3, -2, -1, 0, 1, 2, 3]
     relevant_h_counts = [1]
     relevant_bond_types = [Chem.BondType.SINGLE, Chem.BondType.DOUBLE]
 
