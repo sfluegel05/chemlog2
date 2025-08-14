@@ -15,6 +15,7 @@ from chemlog.alg_classification.charge_classifier import get_charge_category, Al
 from chemlog.alg_classification.peptide_size_classifier import get_carboxy_derivatives, get_amide_bonds, \
     get_amino_groups
 from chemlog.alg_classification.peptide_size_classifier import get_n_amino_acid_residues, AlgPeptideSizeClassifier
+from chemlog.alg_classification.peptide_size_translated import AlgPeptideSizeClassifierTranslated
 from chemlog.alg_classification.proteinogenics_classifier import get_proteinogenic_amino_acids, \
     AlgProteinogenicsClassifier
 from chemlog.alg_classification.substructure_classifier import is_emericellamide, is_diketopiperazine, \
@@ -233,6 +234,9 @@ CLASSIFIERS = {
         ClassifierKeys.SIZE: AlgPeptideSizeClassifier,
         ClassifierKeys.PROTEINOGENICS: AlgProteinogenicsClassifier,
         ClassifierKeys.SUBSTRUCT: AlgSubstructureClassifier,
+    },
+    'algo-translated': {
+        ClassifierKeys.SIZE: AlgPeptideSizeClassifierTranslated
     }
 }
 
@@ -276,7 +280,7 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
         logging.info("Running in single-threaded mode")
         results = []
         for i, (id, row) in tqdm.tqdm(enumerate(data_filtered.iterrows())):
-            results.append(strategy_call(strategy, classifier_instances, id, row))
+            results.append(strategy_call_chebi(strategy, classifier_instances, id, row))
             if len(data_filtered) < 100 or ((i+1) % (len(data_filtered) // 100)) == 0:
                 json_logger.save_items(f"classify_{strategy}", results)
 
@@ -300,7 +304,7 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
                 logging.info(f"Poisoned worker {mp.current_process().name}, exiting")
                 break
             id, row = next_task
-            output_q.put(strategy_call(strategy, classifier_instances, id, row))
+            output_q.put(strategy_call_chebi(strategy, classifier_instances, id, row))
 
     processes = []
     n_workers = min(n_workers, input_q.qsize())
