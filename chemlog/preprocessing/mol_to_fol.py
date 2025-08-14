@@ -257,7 +257,7 @@ def mol_to_fol_atoms_plus_building_blocks(mol: Chem.Mol):
     extensions[BuildingBlock().name()][atoms_universe:atoms_universe + len(building_blocks)] = True
 
     # relations between atoms and building blocks
-    extensions["in"] = np.array(
+    extensions["is_in"] = np.array(
         [[j >= atoms_universe and atom in building_blocks[j - atoms_universe] for j in range(universe)] for atom in range(universe)]
     )
 

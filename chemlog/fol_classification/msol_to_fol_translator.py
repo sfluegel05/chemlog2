@@ -89,7 +89,7 @@ class FOLTranslator(msol.MSOLCompiler):
         elif isinstance(formula.right, msol.Var2):
             if formula.right.symbol in self.so_predicate_variables:
                 return msol.PredicateExpression(formula.right.symbol.lower(), [self.visit(formula.left)])
-            return msol.PredicateExpression("in", [self.visit(formula.left), self.visit(formula.right)])
+            return msol.PredicateExpression("is_in", [self.visit(formula.left), self.visit(formula.right)])
         raise NotImplementedError(
             f"In-set formula {formula} not supported in FOL Translator. "
         )

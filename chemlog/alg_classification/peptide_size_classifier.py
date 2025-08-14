@@ -9,6 +9,9 @@ from chemlog.base_classifier import Classifier
 
 
 class AlgPeptideSizeClassifier(Classifier):
+    """This class classifies peptides based on the number of amino acid residues connected via peptide bonds.
+        It does not use the automatic translation of MSOL definitions directly, but is optimised for performance.
+    """
 
     def classify(self, mol: Chem.Mol, *args, **kwargs) -> (int, dict):
         return get_n_amino_acid_residues(mol, 10000)
