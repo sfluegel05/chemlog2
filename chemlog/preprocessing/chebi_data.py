@@ -78,7 +78,7 @@ class ChEBIData:
 
     def download_sdf(self) -> None:
         if not os.path.exists(self.sdf_path):
-            url = "https://ftp.ebi.ac.uk/pub/databases/chebi/SDF/ChEBI_complete.sdf.gz"
+            url = "https://ftp.ebi.ac.uk/pub/databases/chebi/SDF/chebi.sdf.gz"
             logging.info(f"Downloading ChEBI SDF data from {url}")
             r = requests.get(url)
             if r.status_code != 200:
