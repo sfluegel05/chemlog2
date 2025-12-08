@@ -39,7 +39,7 @@ lopster_chebi_mapping = {
     "carboxylicEster": "33308",
     "amine": "32952",
     "aldehyde": "17478",
-    #"cyclic": "33595",
+    "cyclic": "33595",
     "ketone": "17087",
     "organophosphorus": "25710",
     "alkane": "18310",
@@ -48,6 +48,11 @@ lopster_chebi_mapping = {
 }
 
 class LopsterClassifier(Classifier):
+
+    def __init__(self, cyclic_mode=False):
+        # the original paper evaluates the cyclicity related rules separately
+        # here, using cyclic_mode=True might result in performance issues
+        self.cyclic_mode = cyclic_mode
 
     def classify(self, mol_list):
         res = []
@@ -58,7 +63,7 @@ class LopsterClassifier(Classifier):
                 res.append({})
                 continue
             res.append({cls: self.get_single_classification(mol, lopster_predicate)
-                        for lopster_predicate, cls in lopster_chebi_mapping.items()})
+                        for lopster_predicate, cls in lopster_chebi_mapping.items() if self.cyclic_mode or cls != "33595"})
         return res
     
     def get_single_classification(self, mol, lopster_predicate):
