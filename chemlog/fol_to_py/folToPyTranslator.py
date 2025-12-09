@@ -23,7 +23,8 @@ for i in range(1, 119):
 for i in range(5):
     PREDICATE_NAME_RDKIT_MAPPING[f"has{i}hs"] = lambda a, i=i: f"{a}.GetTotalNumHs() == {i}"
 for charge in range(-3, 4):
-    PREDICATE_NAME_RDKIT_MAPPING[f"charge{charge}"] = lambda a, charge=charge: f"{a}.GetFormalCharge() == {charge}"
+    charge_key = f"charge_m{-charge}" if charge < 0 else f"charge{charge}"
+    PREDICATE_NAME_RDKIT_MAPPING[charge_key] = lambda a, charge=charge: f"{a}.GetFormalCharge() == {charge}"
 
 class PythonCompiler(Compiler):
     """
@@ -47,6 +48,8 @@ class PythonCompiler(Compiler):
             return "and"
         elif connective == fol.BinaryConnective.DISJUNCTION:
             return "or"
+        elif connective == fol.BinaryConnective.NEQ:
+            return "!="
         else:
             raise NotImplementedError(f"Binary connective {connective} not supported in Python Compiler.")
 

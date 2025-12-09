@@ -156,7 +156,7 @@ def run_lopster_translation():
     import os 
     lopster_file = os.path.join(os.path.dirname(__file__), 'lopster_rules_atom_level.pl')
     lopster_file_molecules = os.path.join(os.path.dirname(__file__), 'lopster_rules_molecule_level.pl')
-    with open(os.path.join(os.path.dirname(__file__), 'lopster_python.py'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(os.path.dirname(__file__), 'lopster_python_new.py'), 'w+', encoding='utf-8') as f:
         f.write("from rdkit import Chem\n")
         f.write("# Generated Python code from Lopster rules\n\n")
         f.write(lopster_to_python(lopster_file, remove_x=False))

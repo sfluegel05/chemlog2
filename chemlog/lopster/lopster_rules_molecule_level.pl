@@ -52,7 +52,7 @@ arsenicMolEntity(X) :- molecule(X), hasAtom(X,Y), as(Y).
 bismuthMolEntity(X) :- molecule(X), hasAtom(X,Y), bi(Y).
 
 % molecules that contain nitrogen
-nitrogenMolEntity(X) :- molecule(X), hasAtom(X,Y), ni(Y).
+nitrogenMolEntity(X) :- molecule(X), hasAtom(X,Y), n(Y).
 
 % molecules that are pnictogens
 pnictogenMolEntity(X) :- antimonyMolEntity(X).
@@ -130,13 +130,13 @@ monoatomic(X) :- molecule(X), hasAtom(X,Y1),not polyatomic(X).
 % molecules that contain a carboxy group
 carboxylicAcid(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), o(Y3), hasAtom(X,Y4), horc(Y4), double(Y1,Y2), double(Y2,Y1), single(Y1,Y3), single(Y3,Y1), single(Y1,Y4), single(Y4,Y1), not midOxygen(Y3), not charged(Y3).
 
-% molecules that contain exactly one carboxy group
-atLeast2CarboxyGroups(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), o(Y3), hasAtom(X,Y4), horc(Y4), double(Y1,Y2), double(Y2,Y1), single(Y1,Y3), single(Y3,Y1), single(Y1,Y4), single(Y4,Y1), not midOxygen(Y3), not charged(Y3), hasAtom(X,Y5), c(Y5), hasAtom(X,Y6), o(Y6), hasAtom(X,Y7), o(Y7), hasAtom(X,Y8), horc(Y8), double(Y5,Y6), double(Y6,Y5), single(Y5,Y7), single(Y7,Y5), single(Y5,Y8), single(Y8,Y5), not midOxygen(Y7), not charged(Y7), Y1!=Y5.
-exactly1CarboxyGroup(X) :- carboxylicAcid(X), not atLeast2CarboxyGroups(X).
+% molecules that contain exactly one carboxy group (not needed for ChEBI classification)
+%atLeast2CarboxyGroups(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), o(Y3), hasAtom(X,Y4), horc(Y4), double(Y1,Y2), double(Y2,Y1), single(Y1,Y3), single(Y3,Y1), single(Y1,Y4), single(Y4,Y1), not midOxygen(Y3), not charged(Y3), hasAtom(X,Y5), c(Y5), hasAtom(X,Y6), o(Y6), hasAtom(X,Y7), o(Y7), hasAtom(X,Y8), horc(Y8), double(Y5,Y6), double(Y6,Y5), single(Y5,Y7), single(Y7,Y5), single(Y5,Y8), single(Y8,Y5), not midOxygen(Y7), not charged(Y7), Y1!=Y5.
+%exactly1CarboxyGroup(X) :- carboxylicAcid(X), not atLeast2CarboxyGroups(X).
 
 % molecules that contain exactly two carboxy groups
-atLeast3CarboxyGroups(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), o(Y3), hasAtom(X,Y4), horc(Y4), double(Y1,Y2), double(Y2,Y1), single(Y1,Y3), single(Y3,Y1), single(Y1,Y4), single(Y4,Y1), not midOxygen(Y3), not charged(Y3), hasAtom(X,Y5), c(Y5), hasAtom(X,Y6), o(Y6), hasAtom(X,Y7), o(Y7), hasAtom(X,Y8), horc(Y8), double(Y5,Y6), double(Y6,Y5), single(Y5,Y7), single(Y7,Y5), single(Y5,Y8), single(Y8,Y5), not midOxygen(Y7), not charged(Y7), hasAtom(X,Y9), c(Y9), hasAtom(X,Y10), o(Y10), hasAtom(X,Y11), o(Y11), hasAtom(X,Y12), horc(Y12), double(Y9,Y10), double(Y10,Y9), single(Y9,Y11), single(Y11,Y9), single(Y9,Y12), single(Y12,Y9), not midOxygen(Y11), not charged(Y11), Y1!=Y5, Y9!=Y5, Y9!=Y1.
-exactly2CarboxyGroups(X) :- atLeast2CarboxyGroups(X), not atLeast3CarboxyGroups(X).
+%atLeast3CarboxyGroups(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), o(Y3), hasAtom(X,Y4), horc(Y4), double(Y1,Y2), double(Y2,Y1), single(Y1,Y3), single(Y3,Y1), single(Y1,Y4), single(Y4,Y1), not midOxygen(Y3), not charged(Y3), hasAtom(X,Y5), c(Y5), hasAtom(X,Y6), o(Y6), hasAtom(X,Y7), o(Y7), hasAtom(X,Y8), horc(Y8), double(Y5,Y6), double(Y6,Y5), single(Y5,Y7), single(Y7,Y5), single(Y5,Y8), single(Y8,Y5), not midOxygen(Y7), not charged(Y7), hasAtom(X,Y9), c(Y9), hasAtom(X,Y10), o(Y10), hasAtom(X,Y11), o(Y11), hasAtom(X,Y12), horc(Y12), double(Y9,Y10), double(Y10,Y9), single(Y9,Y11), single(Y11,Y9), single(Y9,Y12), single(Y12,Y9), not midOxygen(Y11), not charged(Y11), Y1!=Y5, Y9!=Y5, Y9!=Y1.
+%exactly2CarboxyGroups(X) :- atLeast2CarboxyGroups(X), not atLeast3CarboxyGroups(X).
 
 % molecules that are carboxylic esters
 carboxylicEster(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), o(Y3), hasAtom(X,Y4), c(Y4), hasAtom(X,Y5), horc(Y5), double(Y1,Y2), double(Y2,Y1), single(Y1,Y3), single(Y3,Y1), single(Y1,Y5), single(Y5,Y1), single(Y3,Y4), single(Y4,Y3).

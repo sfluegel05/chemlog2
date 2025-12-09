@@ -1,5 +1,5 @@
 from rdkit import Chem
-# Generated Python code from Lopster rules - this will be overwritten when calling translate_lopster.run_lopster_translation()
+# Generated Python code from Lopster rules - modified
 
 def has_bond_to(mol: Chem.Mol, so_elements, X, Y):
     # (has_bond_to(X, Y)) <=> ((bsingle(X, Y) | bdouble(X, Y) | btriple(X, Y)))
@@ -33,8 +33,9 @@ def has_bond_toAtLeast4(mol: Chem.Mol, so_elements, X):
     # (has_bond_toAtLeast4(X)) <=> (∃[Y1, Y3, Y4, Y2]: (has_bond_to(X, Y1) & has_bond_to(Y1, X) & has_bond_to(X, Y2) & has_bond_to(Y2, X) & has_bond_to(X, Y3) & has_bond_to(Y3, X) & has_bond_to(X, Y4) & has_bond_to(Y4, X) & (Y1) != (Y2) & (Y1) != (Y3) & (Y1) != (Y4) & (Y2) != (Y3) & (Y2) != (Y4) & (Y3) != (Y4)))
     return any((mol.GetBondBetweenAtoms(X.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), X.GetIdx()) is not None and mol.GetBondBetweenAtoms(X.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), X.GetIdx()) is not None and mol.GetBondBetweenAtoms(X.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), X.GetIdx()) is not None and mol.GetBondBetweenAtoms(X.GetIdx(), Y4.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y4.GetIdx(), X.GetIdx()) is not None and (Y1 != Y2) and (Y1 != Y3) and (Y1 != Y4) and (Y2 != Y3) and (Y2 != Y4) and (Y3 != Y4)) for Y1 in mol.GetAtoms() for Y3 in mol.GetAtoms() for Y4 in mol.GetAtoms() for Y2 in mol.GetAtoms())
 
-def has_bond_toExactly2(mol: Chem.Mol, so_elements, X):
+def has_bond_toExactly2(mol: Chem.Mol, so_elements, X: Chem.Atom):
     # (has_bond_toExactly2(X)) <=> ((has_bond_toAtLeast2(X) & ~(has_bond_toAtLeast3(X))))
+    return len(X.GetNeighbors()) == 2
     return (has_bond_toAtLeast2(mol, so_elements, X) and not(has_bond_toAtLeast3(mol, so_elements, X)))
 
 def has_bond_toExactly3(mol: Chem.Mol, so_elements, X):
@@ -232,6 +233,23 @@ def monoatomic(mol: Chem.Mol, so_elements):
 
 def carboxylicAcid(mol: Chem.Mol, so_elements):
     # (carboxylicAcid()) <=> (∃[Y4, Y3, Y1, Y2]: (c(Y1) & o(Y2) & o(Y3) & horc(Y4) & bdouble(Y1, Y2) & bdouble(Y2, Y1) & bsingle(Y1, Y3) & bsingle(Y3, Y1) & bsingle(Y1, Y4) & bsingle(Y4, Y1) & ~(midOxygen(Y3)) & ~(charged(Y3))))
+    for Y1 in mol.GetAtoms():
+        if not (Y1.GetSymbol() == 'C'):
+            continue
+        neighbors = Y1.GetNeighbors()
+        has_doubleO, has_singleO, hasHorc = False, False, False
+        for neighbor in neighbors:
+            if neighbor.GetSymbol() == 'O' and mol.GetBondBetweenAtoms(Y1.GetIdx(), neighbor.GetIdx()) is not None:
+                bond = mol.GetBondBetweenAtoms(Y1.GetIdx(), neighbor.GetIdx())
+                if bond.GetBondType() == Chem.BondType.DOUBLE:
+                    has_doubleO = True
+                elif bond.GetBondType() == Chem.BondType.SINGLE and not(midOxygen(mol, so_elements, neighbor)) and not(charged(mol, so_elements, neighbor)):
+                    has_singleO = True
+            elif horc(mol, so_elements, neighbor):
+                hasHorc = True
+        if has_doubleO and has_singleO and hasHorc:
+            return True
+    return False
     return any((Y1.GetSymbol() == 'C' and Y2.GetSymbol() == 'O' and Y3.GetSymbol() == 'O' and horc(mol, so_elements, Y4) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and not(midOxygen(mol, so_elements, Y3)) and not(charged(mol, so_elements, Y3))) for Y4 in mol.GetAtoms() for Y3 in mol.GetAtoms() for Y1 in mol.GetAtoms() for Y2 in mol.GetAtoms())
 
 def atLeast2CarboxyGroups(mol: Chem.Mol, so_elements):
@@ -252,6 +270,8 @@ def exactly2CarboxyGroups(mol: Chem.Mol, so_elements):
 
 def carboxylicEster(mol: Chem.Mol, so_elements):
     # (carboxylicEster()) <=> (∃[Y1, Y3, Y5, Y4, Y2]: (c(Y1) & o(Y2) & o(Y3) & c(Y4) & horc(Y5) & bdouble(Y1, Y2) & bdouble(Y2, Y1) & bsingle(Y1, Y3) & bsingle(Y3, Y1) & bsingle(Y1, Y5) & bsingle(Y5, Y1) & bsingle(Y3, Y4) & bsingle(Y4, Y3)))
+    # smarts
+    return Chem.QuickSmartsMatch(Chem.MolToSmiles(mol), "[#6]=[#8](-[#8]-[#6])-[#6,#1]")
     return any((Y1.GetSymbol() == 'C' and Y2.GetSymbol() == 'O' and Y3.GetSymbol() == 'O' and Y4.GetSymbol() == 'C' and horc(mol, so_elements, Y5) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y5.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y5.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y5.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y5.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y4.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y4.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y4.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y4.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE)) for Y1 in mol.GetAtoms() for Y3 in mol.GetAtoms() for Y5 in mol.GetAtoms() for Y4 in mol.GetAtoms() for Y2 in mol.GetAtoms())
 
 def hasBenzeneRing(mol: Chem.Mol, so_elements):
@@ -264,11 +284,32 @@ def hasFourMemberedRing(mol: Chem.Mol, so_elements):
 
 def amine(mol: Chem.Mol, so_elements):
     # (amine()) <=> (∃[Y4, Y3, Y1, Y2]: (n(Y1) & has_bond_to1to3(Y1) & horc(Y2) & horc(Y3) & c(Y4) & bsingle(Y1, Y2) & bsingle(Y2, Y1) & bsingle(Y1, Y3) & bsingle(Y3, Y1) & bsingle(Y1, Y4) & bsingle(Y4, Y1) & ~(acylCarbon(Y2)) & ~(acylCarbon(Y3)) & ~(acylCarbon(Y4)) & (Y2) != (Y3) & (Y2) != (Y4) & (Y3) != (Y4)))
-    return any((Y1.GetSymbol() == 'N' and has_bond_to1to3(mol, so_elements, Y1) and horc(mol, so_elements, Y2) and horc(mol, so_elements, Y3) and Y4.GetSymbol() == 'C' and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and not(acylCarbon(mol, so_elements, Y2)) and not(acylCarbon(mol, so_elements, Y3)) and not(acylCarbon(mol, so_elements, Y4)) and (Y2 != Y3) and (Y2 != Y4) and (Y3 != Y4)) for Y4 in mol.GetAtoms() for Y3 in mol.GetAtoms() for Y1 in mol.GetAtoms() for Y2 in mol.GetAtoms())
+    for Y1 in mol.GetAtoms():
+        if not (Y1.GetSymbol() == 'N'):
+            continue
+        if not has_bond_to1to3(mol, so_elements, Y1):
+            continue
+        if any((horc(mol, so_elements, Y2) and horc(mol, so_elements, Y3) and Y4.GetSymbol() == 'C' and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and not(acylCarbon(mol, so_elements, Y2)) and not(acylCarbon(mol, so_elements, Y3)) and not(acylCarbon(mol, so_elements, Y4)) and (Y2 != Y3) and (Y2 != Y4) and (Y3 != Y4)) for Y4 in mol.GetAtoms() for Y3 in mol.GetAtoms() for Y2 in mol.GetAtoms()):
+            return True
+    return False
 
 def aldehyde(mol: Chem.Mol, so_elements):
     # (aldehyde()) <=> (∃[Y3, Y1, Y2]: (c(Y1) & has_bond_toExactly2(Y1) & o(Y2) & horc(Y3) & bdouble(Y1, Y2) & bdouble(Y2, Y1) & bsingle(Y1, Y3) & bsingle(Y3, Y1)))
-    return any((Y1.GetSymbol() == 'C' and has_bond_toExactly2(mol, so_elements, Y1) and Y2.GetSymbol() == 'O' and horc(mol, so_elements, Y3) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE)) for Y3 in mol.GetAtoms() for Y1 in mol.GetAtoms() for Y2 in mol.GetAtoms())
+    for Y1 in mol.GetAtoms():
+        if not (Y1.GetSymbol() == 'C'):
+            continue
+        if not has_bond_toExactly2(mol, so_elements, Y1):
+            continue
+        neighbors = Y1.GetNeighbors()
+        assert len(neighbors) == 2
+        for [Y2, Y3] in [(neighbors[0], neighbors[1]), (neighbors[1], neighbors[0])]:
+            if not (Y2.GetSymbol() == 'O'):
+                continue
+            if not horc(mol, so_elements, Y3):
+                continue
+            if (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE):
+                return True
+    return False
 
 def cyclic(mol: Chem.Mol, so_elements):
     # (cyclic()) <=> (∃[Y]: (closedLoopAtLeast3(Y)))
@@ -276,6 +317,18 @@ def cyclic(mol: Chem.Mol, so_elements):
 
 def ketone(mol: Chem.Mol, so_elements):
     # (ketone()) <=> (∃[Y4, Y3, Y1, Y2]: (c(Y1) & o(Y2) & c(Y3) & c(Y4) & bdouble(Y1, Y2) & bdouble(Y2, Y1) & bsingle(Y1, Y3) & bsingle(Y3, Y1) & bsingle(Y1, Y4) & bsingle(Y4, Y1) & (Y3) != (Y4)))
+    for Y1 in mol.GetAtoms():
+        if not (Y1.GetSymbol() == "C"):
+            continue
+        neighbors = Y1.GetNeighbors()
+        o_count = [n for n in neighbors if n.GetSymbol() == "O" and (mol.GetBondBetweenAtoms(Y1.GetIdx(), n.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), n.GetIdx()).GetBondType() == Chem.BondType.DOUBLE)]
+        if len(o_count) < 1:
+            continue
+        c_count = [n for n in neighbors if n.GetSymbol() == "C" and (mol.GetBondBetweenAtoms(Y1.GetIdx(), n.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), n.GetIdx()).GetBondType() == Chem.BondType.SINGLE)]
+        if len(c_count) < 2:
+            continue
+        return True
+    return False
     return any((Y1.GetSymbol() == 'C' and Y2.GetSymbol() == 'O' and Y3.GetSymbol() == 'C' and Y4.GetSymbol() == 'C' and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.DOUBLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y3.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y3.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y4.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y4.GetIdx(), Y1.GetIdx()).GetBondType() == Chem.BondType.SINGLE) and (Y3 != Y4)) for Y4 in mol.GetAtoms() for Y3 in mol.GetAtoms() for Y1 in mol.GetAtoms() for Y2 in mol.GetAtoms())
 
 def unsaturated(mol: Chem.Mol, so_elements):
@@ -301,3 +354,9 @@ def haloAlkane(mol: Chem.Mol, so_elements):
 def heteroOrganic(mol: Chem.Mol, so_elements):
     # (heteroOrganic()) <=> (∃[Y1, Y2]: (c(Y1) & ~(c(Y2)) & ~(h(Y2)) & has_bond_to(Y1, Y2) & has_bond_to(Y2, Y1)))
     return any((Y1.GetSymbol() == 'C' and not(Y2.GetSymbol() == 'C') and not(Y2.GetSymbol() == 'H') and mol.GetBondBetweenAtoms(Y1.GetIdx(), Y2.GetIdx()) is not None and mol.GetBondBetweenAtoms(Y2.GetIdx(), Y1.GetIdx()) is not None) for Y1 in mol.GetAtoms() for Y2 in mol.GetAtoms())
+
+if __name__ == "__main__":
+    mol = Chem.MolFromSmiles(r"[Cl-].[H][N+](C)(C)CC\C=C1\c2ccccc2CSc2ccccc12")
+    for atom in mol.GetAtoms():
+        print(f"Atom: {atom.GetIdx()} {atom.GetSymbol()}")
+        print(has_bond_to1to3(mol, [], atom))
