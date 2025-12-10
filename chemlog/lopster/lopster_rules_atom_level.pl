@@ -34,6 +34,7 @@ noble(X) :- kr(X).
 noble(X) :- ne(X).
 noble(X) :- rn(X).
 noble(X) :- xe(X).
+noble(X) :- og(X).
 
 % cyclic molecules
 cleanReachable(X,Y,Z) :- bond(X,Y), bond(Y,X), bond(Y,Z), bond(Z,Y), X != Y, Y != Z, X != Z.
@@ -47,3 +48,4 @@ halogen(X) :- cl(X).
 halogen(X) :- br(X).
 halogen(X) :- i(X).
 halogen(X) :- at(X).
+halogen(X) :- ts(X). 

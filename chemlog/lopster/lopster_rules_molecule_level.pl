@@ -15,12 +15,15 @@ fluorineMolEntity(X) :- molecule(X), hasAtom(X,Y), f(Y).
 % molecules that contain iodine
 iodineMolEntity(X) :- molecule(X), hasAtom(X,Y), i(Y).
 
+tsMolEntity(X) :- molecule(X), hasAtom(X,Y), ts(Y).
+
 % molecules that contain halogens
 halogenMolEntity(X) :- bromineMolEntity(X).
 halogenMolEntity(X) :- chlorineMolEntity(X).
 halogenMolEntity(X) :- fluorineMolEntity(X).
 halogenMolEntity(X) :- astatineMolEntity(X).
 halogenMolEntity(X) :- iodineMolEntity(X).
+halogenMolEntity(X) :- tsMolEntity(X).
 
 
 % molecules that contain polonium
@@ -35,12 +38,15 @@ sulfurMolEntity(X) :- molecule(X), hasAtom(X,Y), s(Y).
 % molecules that contain tellurium
 telluriumMolEntity(X) :- molecule(X), hasAtom(X,Y), te(Y).
 
+livermoriumMolEntity(X) :- molecule(X), hasAtom(X,Y), lv(Y).
+
 % molecules that are chalcogens
 chalcogenMolEntity(X) :- oxygenMolEntity(X).
 chalcogenMolEntity(X) :- poloniumMolEntity(X).
 chalcogenMolEntity(X) :- seleniumMolEntity(X).
 chalcogenMolEntity(X) :- sulfurMolEntity(X).
 chalcogenMolEntity(X) :- telluriumMolEntity(X).
+chalcogenMolEntity(X) :- livermoriumMolEntity(X).
 
 % molecules that contain antimony
 antimonyMolEntity(X) :- molecule(X), hasAtom(X,Y), sb(Y).
@@ -54,12 +60,15 @@ bismuthMolEntity(X) :- molecule(X), hasAtom(X,Y), bi(Y).
 % molecules that contain nitrogen
 nitrogenMolEntity(X) :- molecule(X), hasAtom(X,Y), n(Y).
 
+moscoviumMolEntity(X) :- molecule(X), hasAtom(X,Y), mc(Y).
+
 % molecules that are pnictogens
 pnictogenMolEntity(X) :- antimonyMolEntity(X).
 pnictogenMolEntity(X) :- arsenicMolEntity(X).
 pnictogenMolEntity(X) :- bismuthMolEntity(X).
 pnictogenMolEntity(X) :- nitrogenMolEntity(X).
 pnictogenMolEntity(X) :- phosphorusMolEntity(X).
+pnictogenMolEntity(X) :- moscoviumMolEntity(X).
 
 % molecules that contain chromium
 chromiumMolEntity(X) :- molecule(X), hasAtom(X,Y), cr(Y).
@@ -166,7 +175,7 @@ unsaturated(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), c(Y2), tripl
 saturated(X) :- molecule(X), hasAtom(X,Y1), c(Y1), not unsaturated(X).
 
 % organophosphorus molecules
-organophosphorus(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), p(Y2), single(Y1,Y2), single(Y2,Y1).
+organophosphorus(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), p(Y2), bond(Y1,Y2), bond(Y2,Y1).
 
 % alkane molecules
 alkane(X) :- saturated(X), hydroCarbon(X), not cyclic(X).

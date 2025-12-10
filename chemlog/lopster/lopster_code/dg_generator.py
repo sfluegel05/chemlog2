@@ -63,8 +63,9 @@ class DGGenerator:
             atom = mol.GetAtomWithIdx(i)
             label = set()
             
-            # Add element symbol (lowercase)
-            label.add(atom.GetSymbol().lower())
+            # Add element symbol (lowercase) - exclude wildcards
+            if atom.GetAtomicNum() > 0:
+                label.add(atom.GetSymbol().lower())
             
             # Add formal charge labels
             charge = atom.GetFormalCharge()

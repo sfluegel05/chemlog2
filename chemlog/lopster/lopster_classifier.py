@@ -29,7 +29,7 @@ lopster_chebi_mapping = {
     "chromiumGroupMolEntity": "33741",
     "nobleGasMolEntity": "33583",
     "carbonMolEntity": "50860",
-    "oxygenMolEntity": "25805",
+    "oxygenMolEntity": "25806",
     "hydrogenMolEntity": "33608",
     "phosphorusMolEntity": "26082",
     "inorganic": "24835",
@@ -46,7 +46,10 @@ lopster_chebi_mapping = {
     "organophosphorus": "25710",
     "alkane": "18310",
     "haloAlkane": "24469",
-    "heteroOrganic": "33285"
+    "heteroOrganic": "33285",
+    # new
+    "livermoriumMolEntity": "194538",
+    "moscoviumMolEntity": "194536",
 }
 
 class LopsterClassifier(Classifier):
@@ -66,7 +69,8 @@ class LopsterClassifier(Classifier):
                 continue
             ress = {}
             for lopster_predicate, cls in lopster_chebi_mapping.items():
-                if not self.cyclic_mode and cls == "33595":
+                # some classes are only defined in cyclic mode
+                if not self.cyclic_mode and cls in ["33595", "18310", "24469"]:
                     continue
                 #print(f"Classifying {cls} using {lopster_predicate}")
                 ress[cls] = self.get_single_classification(mol, lopster_predicate)
@@ -82,9 +86,8 @@ class LopsterClassifier(Classifier):
 
 class LopsterClingoClassifier(LopsterClassifier):
 
-    def __init__(self, cyclic_mode=False, batch_size=10):
+    def __init__(self, cyclic_mode=False):
         super().__init__(cyclic_mode)
-        self.batch_size = batch_size
         self.rules_file_atom = os.path.join(os.path.dirname(__file__), 'lopster_rules_atom_level.pl')
         self.rules_file_molecule = os.path.join(os.path.dirname(__file__), 'lopster_rules_molecule_level.pl')
         
@@ -113,12 +116,15 @@ class LopsterClingoClassifier(LopsterClassifier):
 
     def classify(self, mol_list_all, verbose=False):
         res = []
-        idx = 0
-        for mol_list in mol_list_all[idx:idx + self.batch_size]:
-            idx += self.batch_size
-            if not isinstance(mol_list, list):
-                mol_list = [mol_list]
-            lp = self.build_logic_program(mol_list)
+        for idx in tqdm(range(0, len(mol_list_all)), desc="Lopster Clingo classification"):
+            mol = mol_list_all[idx]
+            try:
+                from rdkit import Chem
+                mol = Chem.AddHs(mol)
+            except Exception as e:
+                print(f"Failed to add Hs to molecule: {e}")
+                pass
+            lp = self.build_logic_program([mol])
             if verbose:
                 print("Generated logic program for Clingo -> demo_lopster_clingo.lp")
                 with open("demo_lopster_clingo.lp", 'w+', encoding='utf-8') as f:
@@ -137,27 +143,25 @@ class LopsterClingoClassifier(LopsterClassifier):
             if verbose:
                 print("Clingo solution:", solution)
                 print("Model list:", model_list)
-            for mol_index in range(len(mol_list)):
-                ress = {}
-                for lopster_predicate, cls in lopster_chebi_mapping.items():
-                    if not self.cyclic_mode and cls == "33595":
-                        continue
-                    predicate_found = False
-                    for symbol in model_list:
-                        if str(symbol) == f"{lopster_predicate}(c_mol_{mol_index})":
-                            predicate_found = True
-                            break
-                    ress[cls] = predicate_found
-                res.append(ress)
+            mol_index = 0 # change this if multiple molecules are processed at once
+            ress = {}
+            for lopster_predicate, cls in lopster_chebi_mapping.items():
+                if not self.cyclic_mode and cls in ["33595", "18310", "24469"]:
+                    continue
+                predicate_found = False
+                for symbol in model_list:
+                    if str(symbol) == f"{lopster_predicate}(c_mol_{mol_index})":
+                        predicate_found = True
+                        break
+                ress[cls] = predicate_found
+            res.append(ress)
             
-            if idx >= len(mol_list_all):
-                break
         return res
         
 
 if __name__ == "__main__":
     from rdkit import Chem
     mol = Chem.MolFromSmiles("NC(CC(=O)O)C(=O)O") # aspartic acid
-    #mol = Chem.MolFromSmiles(r"[Cl-].[H][N+](C)(C)CC\C=C1\c2ccccc2CSc2ccccc12")
+    mol = Chem.MolFromSmiles(r"OC(CC[NH+]1CCCCC1)(c1ccccc1)C1CC2C=CC1C2.[Cl-]")
     #print(LopsterClassifier().classify(mol))
-    print(LopsterClingoClassifier().classify([mol], verbose=False))
+    print(LopsterClingoClassifier().classify([mol], verbose=True))
