@@ -45,6 +45,8 @@ def build_ilp_problem(target_id, max_pos_samples=10, max_neg_samples=10, mugglet
     with open(os.path.join(save_dir, "bias.pl"), "w+") as f:
         f.write("\n".join(bias_lines) + "\n")
 
+    print(f"ILP problem for ChEBI:{target_id} saved to {save_dir}")
+
 
 def gather_samples_for_chebi_cls(target_id, save_dir, max_pos_samples=10, max_neg_samples=10):
     # take shortest SMILES with positive labels and random negative samples (from 3-STAR)
@@ -167,4 +169,4 @@ def mol_to_prolog_muggleton(mol, molecule_id="mol1"):
     return prolog_atoms, prolog_bonds
 
 if __name__ == "__main__":
-    build_ilp_problem("33709", 100, 100)
+    build_ilp_problem("24835", 100, 100)
