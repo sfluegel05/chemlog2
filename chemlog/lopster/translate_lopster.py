@@ -1,5 +1,5 @@
 from gavel.logic.problem import AnnotatedFormula
-from gavel.dialects.prolog.parser import PrologParser
+from gavel.dialects.logic_programs.parser import LogicProgramParser
 from gavel.logic import logic
 
 from chemlog.fol_to_py.folToPyTranslator import SO_KEY, PythonCompiler
@@ -16,7 +16,7 @@ def lopster_to_fol(lopster_path: str, remove_x=False) -> list[AnnotatedFormula]:
 
     """
 
-    parser = PrologParser()
+    parser = LogicProgramParser()
     with open(lopster_path, 'r') as file:
         lopster_program = file.read()
 
