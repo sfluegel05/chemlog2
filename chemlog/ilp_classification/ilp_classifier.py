@@ -6,7 +6,8 @@ class PopperWrapper:
     def __init__(self):
         # override default settings for Popper
         self.settings_parameters = {
-            "noisy": True
+            "noisy": True,
+            "anytime_solver": "nuwls"
         }
 
     def solve(self, problem_dir):

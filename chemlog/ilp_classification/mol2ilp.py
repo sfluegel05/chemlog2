@@ -236,7 +236,7 @@ def eval_validation_set(chebi_id, prog,  n_validation_pos, n_validation_neg, pro
     return {"TP": tp, "FN": fn, "TN": tn, "FP": fp}
 
 
-def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, **kwargs):
+def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100, **kwargs):
     if not chebi_splits_file:
         chebi_splits_file = os.path.join("..", "python-chebai", "data", f"chebi_v244", "splits_v244.csv")
     from popper.util import format_prog
@@ -258,7 +258,7 @@ def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits
     ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False)
     for chebi_id in classes_list:
         start_time = time.perf_counter()
-        n_validation_pos, n_validation_neg = ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=50, max_neg_samples=50)
+        n_validation_pos, n_validation_neg = ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
         prog, score, stats = ilp_solver.solve(os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}"))
         print(f"ChEBI:{chebi_id} - Score: {score}")
         print(f"    Learned program:\n{format_prog(prog)}") # todo find out how to pretty print
@@ -282,8 +282,8 @@ if __name__ == "__main__":
     parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
     parser.add_argument("--chebi_splits_file", type=str, default=None, help="Path to the ChEBI splits CSV file.")
     parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
-    # arbitrary additional arguments
-    parser.add_argument("popper_kwargs", nargs="+", help="Arguments for the Popper solver.")
+    # arbitrary additional arguments (optional)
+    parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")
     args = parser.parse_args()
     with open(args.labels_file, "r") as f:
         classes = [line.strip() for line in f.readlines()]
