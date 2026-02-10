@@ -6,6 +6,19 @@ import sys
 import json
 import pickle
 import base64
+from datetime import datetime
+
+
+def log_stderr(log_dir, phase, stderr_code, stderr_content):
+    """Write stderr content to log file with timestamp."""
+    if not stderr_content.strip():
+        return
+    log_file = os.path.join(log_dir, "subprocess.log")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_file, "a") as f:
+        f.write(f"\n[{timestamp}] === {phase} (Return code: {stderr_code}) ===\n")
+        f.write(stderr_content)
+        f.write("\n")
 
 class PopperWrapper:
 
@@ -23,7 +36,7 @@ class PopperWrapper:
     
 
     
-def run_ilp_training_subprocess(problem_dir, settings_parameters):
+def run_ilp_training_subprocess(problem_dir, settings_parameters, log_dir=None):
     """Run Popper ILP learning in a separate subprocess for isolated Prolog session."""
     script = f'''
 import json
@@ -48,10 +61,8 @@ print(json.dumps(result))
         text=True,
         cwd=os.getcwd()
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"Popper training failed: {result.stderr}")
-    if not result.stdout.strip():
-        raise RuntimeError(f"Popper training produced no output. stderr: {result.stderr}")
+    if log_dir:
+        log_stderr(log_dir, f"Training: {problem_dir}", result.returncode, result.stderr)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
     stdout_lines = result.stdout.strip().split('\n')
     output = json.loads(stdout_lines[-1])
@@ -65,7 +76,7 @@ print(json.dumps(result))
     return output
 
 
-def run_ilp_validation_subprocess(chebi_id, prog, n_validation_pos, n_validation_neg, problem_dir, settings_parameters):
+def run_ilp_validation_subprocess(chebi_id, prog, n_validation_pos, n_validation_neg, problem_dir, settings_parameters, log_dir=None):
     """Run Popper validation in a separate subprocess for isolated Prolog session."""
     # Serialize prog object using pickle and base64 encode
     prog_pickled = base64.b64encode(pickle.dumps(prog)).decode('ascii') if prog else ""
@@ -102,23 +113,27 @@ else:
 result = {{"TP": tp, "FN": fn, "TN": tn, "FP": fp}}
 print(json.dumps(result))
 '''
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-        cwd=os.getcwd()
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Popper validation failed: {result.stderr}")
-    if not result.stdout.strip():
-        raise RuntimeError(f"Popper validation produced no output. stderr: {result.stderr}")
+    # Get timeout from settings_parameters (default 60 seconds for validation)
+    timeout = settings_parameters.get("timeout", 60)
+    
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=os.getcwd(),
+            timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        if log_dir:
+            log_stderr(log_dir, f"Validation: chebi_{chebi_id}", -1, f"Validation timed out after {timeout} seconds")
+        print(f"    Validation timed out after {timeout} seconds")
+        return {"TP": 0, "FN": n_validation_pos, "TN": n_validation_neg, "FP": 0, "timeout": True}
+    
+    if log_dir:
+        log_stderr(log_dir, f"Validation: chebi_{chebi_id}", result.returncode, result.stderr)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
     stdout_lines = result.stdout.strip().split('\n')
     conf_matrix = json.loads(stdout_lines[-1])
     print(f"    Validation set: TP: {conf_matrix['TP']}, FN: {conf_matrix['FN']}, TN: {conf_matrix['TN']}, FP: {conf_matrix['FP']}")
     return conf_matrix
-
-if __name__ == "__main__":
-    stdout = r'{"prog_pickled": "gASVnAAAAAAAAAAojAtwb3BwZXIudXRpbJSMB0xpdGVyYWyUk5SMC2NoZWJpXzIzODI0lEsAhZSGlIGUKGgCjAdiU0lOR0xFlEsBSwKGlIaUgZRoAowBb5RLAoWUhpSBlGgCjAhoYXNfYXRvbZRLAEsBhpSGlIGUaAKMEWhhc19hdF9sZWFzdF8xX2hzlGgMhpSBlGgCaBNLAYWUhpSBlJGUhpSRlC4=", "prog_str": "chebi_23824(V0):- bSINGLE(V1,V2),o(V2),has_atom(V0,V1),has_at_least_1_hs(V2),has_at_least_1_hs(V1).", "score": [97, 3, 62, 38, 6]}'
-    output = json.loads(stdout)
-    print(output)

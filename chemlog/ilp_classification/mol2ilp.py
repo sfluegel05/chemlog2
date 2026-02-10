@@ -249,24 +249,31 @@ def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits
     
     for chebi_id in classes_list:
         start_time = time.perf_counter()
-        n_validation_pos, n_validation_neg = ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
-        
-        # Run training in subprocess (isolated Prolog session)
-        problem_path = os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}")
-        train_result = run_ilp_training_subprocess(problem_path, settings_parameters)
-        prog = train_result["prog"]  # actual prog object
-        prog_str = train_result["prog_str"]  # string representation for display/storage
-        score = train_result["score"]
-        
-        print(f"ChEBI:{chebi_id} - Score: {score}")
-        print(f"    Learned program:\n{prog_str}")
-        
-        # Run validation in subprocess (isolated Prolog session)
-        conf_matrix = run_ilp_validation_subprocess(
-            chebi_id, prog, n_validation_pos, n_validation_neg,
-            problem_dir=ilp_builder.problem_dir, 
-            settings_parameters=settings_parameters
-        )
+        try: 
+            n_validation_pos, n_validation_neg = ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
+            
+            # Run training in subprocess (isolated Prolog session)
+            problem_path = os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}")
+            train_result = run_ilp_training_subprocess(problem_path, settings_parameters, log_dir=results_dir)
+            prog = train_result["prog"]  # actual prog object
+            prog_str = train_result["prog_str"]  # string representation for display/storage
+            score = train_result["score"]
+            
+            print(f"ChEBI:{chebi_id} - Score: {score}")
+            print(f"    Learned program:\n{prog_str}")
+            
+            # Run validation in subprocess (isolated Prolog session)
+            conf_matrix = run_ilp_validation_subprocess(
+                chebi_id, prog, n_validation_pos, n_validation_neg,
+                problem_dir=ilp_builder.problem_dir, 
+                settings_parameters=settings_parameters,
+                log_dir=results_dir
+            )
+        except Exception as e:
+            print(f"Error processing ChEBI:{chebi_id} - {e}")
+            prog_str = None
+            score = None
+            conf_matrix = None
         
         with open(os.path.join(results_dir, "results.json"), "a+") as f:
             result_entry = {
