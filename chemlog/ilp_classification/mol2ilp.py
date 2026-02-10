@@ -1,12 +1,13 @@
-import datetime
 import os
-from rdkit import Chem
-from rdkit.Chem import rdmolops
-from chemlog.ilp_classification.ilp_classifier import PopperWrapper
+import subprocess
+import sys
+import json
+from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subprocess, run_ilp_validation_subprocess
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 import pandas as pd
 import time
+
 
 class ILPProblemBuilder:
 
@@ -123,7 +124,10 @@ class ILPProblemBuilder:
         # validation exs
         validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
         df_pos = validation_samples_df[[int(id) in descendants or str(id) in descendants for id in validation_samples_df.index]]
+        df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)))
         df_neg = validation_samples_df[[id not in df_pos.index for id in validation_samples_df.index]]
+        df_neg = df_neg.sample(min(max_neg_samples, len(df_neg)))
+
         with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
             for mol_id in df_pos.index:
                 f.write(f"pos(chebi_{target_id}({mol_id})).\n")
@@ -217,29 +221,10 @@ def mol_to_prolog_muggleton(mol, molecule_id="mol1"):
 
     return prolog_atoms, prolog_bonds
 
-def eval_validation_set(chebi_id, prog,  n_validation_pos, n_validation_neg, problem_dir=None, settings_parameters={}):
-    if not problem_dir:
-        problem_dir = os.path.join("ilp", f"chebi_v244")
-    from popper.tester import Tester
-    from popper.util import Settings
-    settings = Settings(kbpath=os.path.join(problem_dir, f"chebi_{chebi_id}"), **settings_parameters)
-    settings.datalog = False # when not setting this parameter or setting it to True, the tester fails with an error
-    settings.bk_file = os.path.join(problem_dir, "bk_validation.pl")
-    settings.ex_file = os.path.join(problem_dir, f"chebi_{chebi_id}", "exs_validation.pl")
-    ilp_tester = Tester(settings)
-    pos_covered, neg_covered = ilp_tester.test_prog_all(prog)
-    tp = pos_covered.count(1)
-    fn = tp - n_validation_pos
-    fp = neg_covered.count(1)
-    tn = n_validation_neg - fp
-    print(f"    Validation set: TP: {tp}, FN: {fn}, TN: {tn}, FP: {fp}")
-    return {"TP": tp, "FN": fn, "TN": tn, "FP": fp}
-
 
 def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100, **kwargs):
     if not chebi_splits_file:
         chebi_splits_file = os.path.join("..", "python-chebai", "data", f"chebi_v244", "splits_v244.csv")
-    from popper.util import format_prog
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     results_dir = os.path.join("ilp", "results", f"run_{timestamp}")
     os.makedirs(results_dir, exist_ok=True)
@@ -252,27 +237,47 @@ def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits
         for key, value in kwargs.items():
             f.write(f"{key}: {value}\n")
 
-    ilp_solver = PopperWrapper()
-    ilp_solver.settings_parameters.update(kwargs)
-    ilp_solver.settings_parameters["timeout"] = timeout
+    # Build settings parameters for Popper
+    settings_parameters = {
+        "noisy": True,
+        "anytime_solver": "nuwls",
+        "timeout": timeout,
+    }
+    settings_parameters.update(kwargs)
+    
     ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False)
+    
     for chebi_id in classes_list:
         start_time = time.perf_counter()
         n_validation_pos, n_validation_neg = ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
-        prog, score, stats = ilp_solver.solve(os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}"))
+        
+        # Run training in subprocess (isolated Prolog session)
+        problem_path = os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}")
+        train_result = run_ilp_training_subprocess(problem_path, settings_parameters)
+        prog = train_result["prog"]  # actual prog object
+        prog_str = train_result["prog_str"]  # string representation for display/storage
+        score = train_result["score"]
+        
         print(f"ChEBI:{chebi_id} - Score: {score}")
-        print(f"    Learned program:\n{format_prog(prog)}") # todo find out how to pretty print
-        conf_matrix = eval_validation_set(chebi_id, prog, n_validation_pos, n_validation_neg, problem_dir=ilp_builder.problem_dir, settings_parameters=ilp_solver.settings_parameters)
+        print(f"    Learned program:\n{prog_str}")
+        
+        # Run validation in subprocess (isolated Prolog session)
+        conf_matrix = run_ilp_validation_subprocess(
+            chebi_id, prog, n_validation_pos, n_validation_neg,
+            problem_dir=ilp_builder.problem_dir, 
+            settings_parameters=settings_parameters
+        )
+        
         with open(os.path.join(results_dir, "results.json"), "a+") as f:
-            import json
             result_entry = {
                 "chebi_id": chebi_id,
-                "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]},
+                "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
                 "time_taken": time.perf_counter() - start_time,
-                "program": format_prog(prog),
+                "program": prog_str,
                 "validation_score": conf_matrix,
             }
             f.write(json.dumps(result_entry) + "\n")
+
 
 if __name__ == "__main__":
     # use command line arguments as kwargs for eval_chebi_classes
