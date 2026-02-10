@@ -52,7 +52,9 @@ print(json.dumps(result))
         raise RuntimeError(f"Popper training failed: {result.stderr}")
     if not result.stdout.strip():
         raise RuntimeError(f"Popper training produced no output. stderr: {result.stderr}")
-    output = json.loads(result.stdout)
+    # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
+    stdout_lines = result.stdout.strip().split('\n')
+    output = json.loads(stdout_lines[-1])
     
     # Deserialize the prog object
     if output["prog_pickled"]:
@@ -110,7 +112,13 @@ print(json.dumps(result))
         raise RuntimeError(f"Popper validation failed: {result.stderr}")
     if not result.stdout.strip():
         raise RuntimeError(f"Popper validation produced no output. stderr: {result.stderr}")
-    conf_matrix = json.loads(result.stdout)
+    # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
+    stdout_lines = result.stdout.strip().split('\n')
+    conf_matrix = json.loads(stdout_lines[-1])
     print(f"    Validation set: TP: {conf_matrix['TP']}, FN: {conf_matrix['FN']}, TN: {conf_matrix['TN']}, FP: {conf_matrix['FP']}")
     return conf_matrix
 
+if __name__ == "__main__":
+    stdout = r'{"prog_pickled": "gASVnAAAAAAAAAAojAtwb3BwZXIudXRpbJSMB0xpdGVyYWyUk5SMC2NoZWJpXzIzODI0lEsAhZSGlIGUKGgCjAdiU0lOR0xFlEsBSwKGlIaUgZRoAowBb5RLAoWUhpSBlGgCjAhoYXNfYXRvbZRLAEsBhpSGlIGUaAKMEWhhc19hdF9sZWFzdF8xX2hzlGgMhpSBlGgCaBNLAYWUhpSBlJGUhpSRlC4=", "prog_str": "chebi_23824(V0):- bSINGLE(V1,V2),o(V2),has_atom(V0,V1),has_at_least_1_hs(V2),has_at_least_1_hs(V1).", "score": [97, 3, 62, 38, 6]}'
+    output = json.loads(stdout)
+    print(output)
