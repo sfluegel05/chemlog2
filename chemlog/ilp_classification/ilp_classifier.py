@@ -50,6 +50,8 @@ print(json.dumps(result))
     )
     if result.returncode != 0:
         raise RuntimeError(f"Popper training failed: {result.stderr}")
+    if not result.stdout.strip():
+        raise RuntimeError(f"Popper training produced no output. stderr: {result.stderr}")
     output = json.loads(result.stdout)
     
     # Deserialize the prog object
@@ -106,6 +108,8 @@ print(json.dumps(result))
     )
     if result.returncode != 0:
         raise RuntimeError(f"Popper validation failed: {result.stderr}")
+    if not result.stdout.strip():
+        raise RuntimeError(f"Popper validation produced no output. stderr: {result.stderr}")
     conf_matrix = json.loads(result.stdout)
     print(f"    Validation set: TP: {conf_matrix['TP']}, FN: {conf_matrix['FN']}, TN: {conf_matrix['TN']}, FP: {conf_matrix['FP']}")
     return conf_matrix
