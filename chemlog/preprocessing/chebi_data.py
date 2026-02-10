@@ -182,4 +182,4 @@ def term_callback(doc) -> (int, dict):
 
 
 if __name__ == "__main__":
-    data = ChEBIData(chebi_version=239)
+    data = ChEBIData(chebi_version=244)
