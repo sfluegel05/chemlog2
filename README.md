@@ -1,6 +1,33 @@
 ChemLog is a framework for rule-based ontology extension. 
 This repository implements a classification of peptides on the ChEBI and PubChem datasets.
 
+## Installation
+
+You can install ChemLog with pip:
+```
+pip install chemlog
+```
+
+To get the latest development version, download the source code and install with
+```
+pip install .
+```
+
+If you want to use the MONA reasoner, you have to [install it separately](https://www.brics.dk/mona/download.html) (the classifier expects the `mona` command to be available).
+
+## Run the classification
+
+ChemLog provides a command line interface for the classification. Results are in JSON format for each run, alongside a log and a config file. Currently, classification of ChEBI and PubChem data is supported. Download and preprocessing of the data are handled automatically. For instances, the following command classifies the 1,000 smallest peptides in ChEBI with the algorithmic method:
+    
+    python -m chemlog classify-chebi --chebi-version 239 --strategy algo --only-peptides --n-molecules 1000
+
+For more details on the available command line options run
+
+    python -m chemlog --help
+
+## Publication
+
+[Flügel et al. (2025): ChemLog: Making MSOL Viable for Ontological Classification and Learning](https://arxiv.org/abs/2507.13987)
 
 ## How are peptides classified?
 
@@ -46,25 +73,3 @@ ChemLog will also return the ChEBI classes that match this classification. Curre
 All implementations are based on the same natural language definitions and have been developed jointly. Therefore, it is expected that all methods yield the same result. If you make a different experience, please open an issue.
 
 If you face problems using ChemLog or have other questions, feel free to open an issue as well.
-
-## Installation
-
-Download the source code from this repository.
-
-Install with
-```
-pip install .
-```
-
-If you want to use the MONA reasoner, you have to install it separately (the classifier expects the `mona` command to be available).
-
-## Run the classification
-
-ChemLog provides a command line interface for the classification. Results are in JSON format for each run, alongside a log and a config file. Currently, classification of ChEBI and PubChem data is supported. Download and preprocessing of the data are handled automatically. For instances, the following command classifies the 1,000 smallest peptides in ChEBI with the algorithmic method:
-    
-    python -m chemlog classify-chebi --chebi-version 239 --strategy algo --only-peptides --n-molecules 1000
-
-For more details on the available command line options run
-
-    python -m chemlog --help
-
