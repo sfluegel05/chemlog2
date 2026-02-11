@@ -338,11 +338,13 @@ if __name__ == "__main__":
         parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
         parser.add_argument("--max_vars", type=int, default=6, help="Maximum number of variables in learned rules.")
         parser.add_argument("--max_body", type=int, default=6, help="Maximum number of body literals in learned rules.")
+        parser.add_argument("--max_pos_samples", type=int, default=100, help="Maximum number of positive samples per class.")
+        parser.add_argument("--max_neg_samples", type=int, default=100, help="Maximum number of negative samples per class.")
         # arbitrary additional arguments (optional)
         parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")
         args = parser.parse_args()
         with open(args.labels_file, "r") as f:
             classes = [line.strip() for line in f.readlines()]
         
-        build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, max_pos_samples=100, max_neg_samples=100)
-        learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, timeout=args.timeout, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
+        build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples)
+        learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, timeout=args.timeout, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, max_vars=args.max_vars, max_body=args.max_body, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
