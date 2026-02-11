@@ -101,11 +101,12 @@ class ILPProblemBuilder:
 
         validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
         # take subgraph of chebi hierarchy containing all target classes and their ancestors
+        nontrans_hierarchy = self.chebi_data.build_hierarchy_graph()
         subgraph_nodes = set()
-        for target_id in target_ids:
+        for target_id in list(target_ids) + list(self.validation_ids):
             subgraph_nodes.add(int(target_id))
-            subgraph_nodes.update(nx.ancestors(self.hierarchy_graph, int(target_id)))
-        subgraph = self.hierarchy_graph.subgraph(subgraph_nodes)
+            subgraph_nodes.update(nx.ancestors(nontrans_hierarchy, int(target_id)))
+        subgraph = nontrans_hierarchy.subgraph(subgraph_nodes)
         print(f"Validation hierarchy subgraph has {subgraph.number_of_nodes()} nodes and {subgraph.number_of_edges()} edges")
         # nx make digraph undirected for distance calculations
         undirected_graph = subgraph.to_undirected()
@@ -121,13 +122,11 @@ class ILPProblemBuilder:
         pos_samples, neg_samples = [], []
 
         df_pos = train_samples_df[[id in descendants for id in train_samples_df.index]]
+        df_neg = train_samples_df[[id not in df_pos.index for id in train_samples_df.index]]
+
         df_pos["smiles_length"] = df_pos["smiles"].apply(len)
         df_pos = df_pos.sort_values(by="smiles_length")
         pos_samples = df_pos[:max_pos_samples]
-
-        df_neg = train_samples_df[[id not in df_pos.index for id in train_samples_df.index]]
-        #df_neg["smiles_length"] = df_neg["smiles"].apply(len)
-        #df_neg = df_neg.sort_values(by="smiles_length")
         neg_samples = df_neg.sample(max_neg_samples)
 
         
@@ -144,18 +143,22 @@ class ILPProblemBuilder:
     def gather_validation_samples(self, target_id, validation_samples_df, undirected_graph, max_pos_samples=100, max_neg_samples=100) -> tuple[int, int]:
         import networkx as nx
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
-        # 232090
-        print(232090 in descendants)
-        print(list(self.hierarchy_graph.predecessors(232090)))
-        df_pos = validation_samples_df[[int(id) in descendants or str(id) in descendants for id in validation_samples_df.index]]
-        df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)))
+        df_pos = validation_samples_df[[int(id) in descendants for id in validation_samples_df.index]]
         df_neg = validation_samples_df[[id not in df_pos.index for id in validation_samples_df.index]]
+        df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)))
         # instead of sampling, take samples that are closest in the chebi graph (minimum distance between classes)
-
         df_neg["dist_to_target"] = df_neg.index.to_series().apply(
             lambda x: min(nx.shortest_path_length(undirected_graph, int(label), int(target_id)) for label in self.hierarchy_graph.predecessors(int(x)) if int(label) in undirected_graph ))
         df_neg = df_neg.sort_values(by="dist_to_target")
-        df_neg = df_neg[:max_neg_samples]
+        # sample for each distance until we have enough samples or run out of samples
+        neg_samples = []
+        for dist, group in df_neg.groupby("dist_to_target"):
+            if len(neg_samples) >= max_neg_samples:
+                break
+            # shuffle group to get random samples from this distance
+            group = group.sample(frac=1)
+            neg_samples.extend(group.index.tolist())
+        df_neg = df_neg.loc[neg_samples[:max_neg_samples]]
 
         with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
             for mol_id in df_pos.index:
@@ -322,11 +325,6 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
 
 if __name__ == "__main__":
     # use command line arguments as kwargs for eval_chebi_classes
-    labels_file = os.path.join("data", "test_labels.txt")
-    with open(labels_file, "r") as f:
-            classes = [line.strip() for line in f.readlines()]
-    build_validation_data(classes, chebi_version=244, chebi_splits_file=os.path.join("data", "splits_v244.csv"))
-    if False:
         import argparse
         parser = argparse.ArgumentParser(description="Evaluate ILP classification on ChEBI classes using Popper.")
         parser.add_argument("--labels_file", type=str, default=None, help="Path to the labels file.")
@@ -338,4 +336,6 @@ if __name__ == "__main__":
         args = parser.parse_args()
         with open(args.labels_file, "r") as f:
             classes = [line.strip() for line in f.readlines()]
+        
+        build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, max_pos_samples=100, max_neg_samples=100)
         learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, timeout=args.timeout, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
