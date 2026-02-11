@@ -2,6 +2,9 @@ import os
 import subprocess
 import sys
 import json
+import networkx as nx
+
+import tqdm
 from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subprocess, run_ilp_validation_subprocess
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
@@ -42,14 +45,8 @@ class ILPProblemBuilder:
             else:
                 raise ValueError(f"Unknown split '{split}' for ChEBI ID {chebi_id}")
             
-        # validation bk knowledge
-        validation_rows = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
-        prolog_lines, body_predicates = build_background_muggleton(validation_rows) if self.muggleton else build_background_chemlog(validation_rows)
-
-        with open(os.path.join(self.problem_dir, "bk_validation.pl"), "w+") as f:
-            f.write("\n".join(prolog_lines) + "\n")
-
-    def build_ilp_problem(self,target_id, max_pos_samples=10, max_neg_samples=10):
+        
+    def build_ilp_problem(self,target_id, max_pos_samples=100, max_neg_samples=100):
         """
         Build an ILP problem for classifying molecules based on their membership in a ChEBI class.
 
@@ -62,7 +59,7 @@ class ILPProblemBuilder:
         target_dir = os.path.join(self.problem_dir, f"chebi_{target_id}")
         os.makedirs(target_dir, exist_ok=True)
 
-        selected_rows, n_val_pos, n_val_neg = self.gather_samples_for_chebi_cls(target_id, max_pos_samples, max_neg_samples)
+        selected_rows = self.gather_samples_for_chebi_cls(target_id, max_pos_samples, max_neg_samples)
 
         prolog_lines, body_predicates = build_background_muggleton(selected_rows) if self.muggleton else build_background_chemlog(selected_rows)
 
@@ -92,9 +89,30 @@ class ILPProblemBuilder:
 
         print(f"ILP problem for ChEBI:{target_id} saved to {target_dir}")
 
-        return n_val_pos, n_val_neg
+        return
 
-    def gather_samples_for_chebi_cls(self, target_id, max_pos_samples=10, max_neg_samples=10) -> tuple[pd.DataFrame, int, int]:
+    def build_validation(self, target_ids, max_pos_samples=100, max_neg_samples=100):
+        # validation bk knowledge
+        validation_rows = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
+        prolog_lines, body_predicates = build_background_muggleton(validation_rows) if self.muggleton else build_background_chemlog(validation_rows)
+
+        with open(os.path.join(self.problem_dir, "bk_validation.pl"), "w+") as f:
+            f.write("\n".join(prolog_lines) + "\n")
+
+        validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
+        # take subgraph of chebi hierarchy containing all target classes and their ancestors
+        subgraph_nodes = set()
+        for target_id in target_ids:
+            subgraph_nodes.add(int(target_id))
+            subgraph_nodes.update(nx.ancestors(self.hierarchy_graph, int(target_id)))
+        subgraph = self.hierarchy_graph.subgraph(subgraph_nodes)
+        print(f"Validation hierarchy subgraph has {subgraph.number_of_nodes()} nodes and {subgraph.number_of_edges()} edges")
+        # nx make digraph undirected for distance calculations
+        undirected_graph = subgraph.to_undirected()
+        for target_id in tqdm.tqdm(target_ids, desc="Building validation data"):
+            self.gather_validation_samples(target_id, validation_samples_df, undirected_graph, max_pos_samples, max_neg_samples)
+
+    def gather_samples_for_chebi_cls(self, target_id, max_pos_samples=100, max_neg_samples=100) -> pd.DataFrame:
         # take shortest SMILES with positive labels and random negative samples (from 3-STAR)
         train_samples_df = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
@@ -121,12 +139,23 @@ class ILPProblemBuilder:
 
         print(f"Training on {len(pos_samples)} positive and {len(neg_samples)} negative samples")
 
-        # validation exs
-        validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
+        return pd.concat([pos_samples, neg_samples])
+
+    def gather_validation_samples(self, target_id, validation_samples_df, undirected_graph, max_pos_samples=100, max_neg_samples=100) -> tuple[int, int]:
+        import networkx as nx
+        descendants = list(self.hierarchy_graph.successors(int(target_id)))
+        # 232090
+        print(232090 in descendants)
+        print(list(self.hierarchy_graph.predecessors(232090)))
         df_pos = validation_samples_df[[int(id) in descendants or str(id) in descendants for id in validation_samples_df.index]]
         df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)))
         df_neg = validation_samples_df[[id not in df_pos.index for id in validation_samples_df.index]]
-        df_neg = df_neg.sample(min(max_neg_samples, len(df_neg)))
+        # instead of sampling, take samples that are closest in the chebi graph (minimum distance between classes)
+
+        df_neg["dist_to_target"] = df_neg.index.to_series().apply(
+            lambda x: min(nx.shortest_path_length(undirected_graph, int(label), int(target_id)) for label in self.hierarchy_graph.predecessors(int(x)) if int(label) in undirected_graph ))
+        df_neg = df_neg.sort_values(by="dist_to_target")
+        df_neg = df_neg[:max_neg_samples]
 
         with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
             for mol_id in df_pos.index:
@@ -134,10 +163,9 @@ class ILPProblemBuilder:
             for mol_id in df_neg.index:
                 f.write(f"neg(chebi_{target_id}({mol_id})).\n")
 
-        print(f"Validating on {len(df_pos)} positive and {len(df_neg)} negative samples")
+        print(f"Validating ChEBI:{target_id} on {len(df_pos)} positive and {len(df_neg)} negative samples")
 
-        return pd.concat([pos_samples, neg_samples]), len(df_pos), len(df_neg)
-
+        return len(df_pos), len(df_neg)
 
 def get_atom_id(atom: int, molecule_id):
     return "a" + str(molecule_id) + "_" + str(atom + 1)  # Prolog indices start at 1
@@ -222,9 +250,15 @@ def mol_to_prolog_muggleton(mol, molecule_id="mol1"):
     return prolog_atoms, prolog_bonds
 
 
-def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100, **kwargs):
+def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100):
     if not chebi_splits_file:
-        chebi_splits_file = os.path.join("..", "python-chebai", "data", f"chebi_v244", "splits_v244.csv")
+        chebi_splits_file = os.path.join("data", "splits_v244.csv")
+    ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False)
+    ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
+
+def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100, **kwargs):
+    if not chebi_splits_file:
+        chebi_splits_file = os.path.join("data", "splits_v244.csv")
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     results_dir = os.path.join("ilp", "results", f"run_{timestamp}")
     os.makedirs(results_dir, exist_ok=True)
@@ -288,15 +322,20 @@ def eval_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits
 
 if __name__ == "__main__":
     # use command line arguments as kwargs for eval_chebi_classes
-    import argparse
-    parser = argparse.ArgumentParser(description="Evaluate ILP classification on ChEBI classes using Popper.")
-    parser.add_argument("--labels_file", type=str, default=None, help="Path to the labels file.")
-    parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
-    parser.add_argument("--chebi_splits_file", type=str, default=None, help="Path to the ChEBI splits CSV file.")
-    parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
-    # arbitrary additional arguments (optional)
-    parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")
-    args = parser.parse_args()
-    with open(args.labels_file, "r") as f:
-        classes = [line.strip() for line in f.readlines()]
-    eval_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, timeout=args.timeout, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
+    labels_file = os.path.join("data", "test_labels.txt")
+    with open(labels_file, "r") as f:
+            classes = [line.strip() for line in f.readlines()]
+    build_validation_data(classes, chebi_version=244, chebi_splits_file=os.path.join("data", "splits_v244.csv"))
+    if False:
+        import argparse
+        parser = argparse.ArgumentParser(description="Evaluate ILP classification on ChEBI classes using Popper.")
+        parser.add_argument("--labels_file", type=str, default=None, help="Path to the labels file.")
+        parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
+        parser.add_argument("--chebi_splits_file", type=str, default=None, help="Path to the ChEBI splits CSV file.")
+        parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
+        # arbitrary additional arguments (optional)
+        parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")
+        args = parser.parse_args()
+        with open(args.labels_file, "r") as f:
+            classes = [line.strip() for line in f.readlines()]
+        learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, timeout=args.timeout, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
