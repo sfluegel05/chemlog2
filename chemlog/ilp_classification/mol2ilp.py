@@ -14,13 +14,15 @@ import time
 
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False):
+    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, max_vars=6, max_body=6):
         self.chebi_version = chebi_version
         if not problem_dir:
             problem_dir = os.path.join("ilp", f"chebi_v{chebi_version}")
         self.problem_dir = problem_dir
         os.makedirs(self.problem_dir, exist_ok=True)
         self.muggleton = muggleton
+        self.max_vars = max_vars
+        self.max_body = max_body
 
         self.chebi_data = ChEBIData(chebi_version=self.chebi_version)
         self.hierarchy_graph = self.chebi_data.get_trans_hierarchy()
@@ -70,6 +72,9 @@ class ILPProblemBuilder:
             f"%% CHEBI:{target_id}",
             f"%% intended rule:",
             f"%% chebi_{target_id}(V0) :- ???.",
+            f"",
+            f"max_vars({self.max_vars}).",
+            f"max_body({self.max_body}).",
             f"",
             f"head_pred(chebi_{target_id}, 1)."] + [
             f"body_pred({pred},{arity})." for pred, arity in body_predicates
@@ -259,7 +264,7 @@ def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None
     ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False)
     ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
 
-def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100, **kwargs):
+def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, max_pos_samples=100, max_neg_samples=100, max_vars=6, max_body=6, **kwargs):
     if not chebi_splits_file:
         chebi_splits_file = os.path.join("data", "splits_v244.csv")
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -282,12 +287,12 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
     }
     settings_parameters.update(kwargs)
     
-    ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False)
+    ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, max_vars=max_vars, max_body=max_body)
     
     for chebi_id in classes_list:
         start_time = time.perf_counter()
         try: 
-            n_validation_pos, n_validation_neg = ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
+            ilp_builder.build_ilp_problem(chebi_id, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
             
             # Run training in subprocess (isolated Prolog session)
             problem_path = os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}")
@@ -301,7 +306,7 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
             
             # Run validation in subprocess (isolated Prolog session)
             conf_matrix = run_ilp_validation_subprocess(
-                chebi_id, prog, n_validation_pos, n_validation_neg,
+                chebi_id, prog,
                 problem_dir=ilp_builder.problem_dir, 
                 settings_parameters=settings_parameters,
                 log_dir=results_dir
@@ -331,6 +336,8 @@ if __name__ == "__main__":
         parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
         parser.add_argument("--chebi_splits_file", type=str, default=None, help="Path to the ChEBI splits CSV file.")
         parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
+        parser.add_argument("--max_vars", type=int, default=6, help="Maximum number of variables in learned rules.")
+        parser.add_argument("--max_body", type=int, default=6, help="Maximum number of body literals in learned rules.")
         # arbitrary additional arguments (optional)
         parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")
         args = parser.parse_args()

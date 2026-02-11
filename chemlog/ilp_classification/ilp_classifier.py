@@ -76,10 +76,17 @@ print(json.dumps(result))
     return output
 
 
-def run_ilp_validation_subprocess(chebi_id, prog, n_validation_pos, n_validation_neg, problem_dir, settings_parameters, log_dir=None):
+def run_ilp_validation_subprocess(chebi_id, prog, problem_dir, settings_parameters, log_dir=None):
     """Run Popper validation in a separate subprocess for isolated Prolog session."""
     # Serialize prog object using pickle and base64 encode
     prog_pickled = base64.b64encode(pickle.dumps(prog)).decode('ascii') if prog else ""
+
+    exs_file = f"{problem_dir}/chebi_{chebi_id}/exs_validation.pl"
+    with open(exs_file, "r") as f:
+        exs_content = f.read()
+        # count pos and neg examples
+        n_validation_pos = exs_content.count("pos(")
+        n_validation_neg = exs_content.count("neg(")
     
     script = f'''
 import json
