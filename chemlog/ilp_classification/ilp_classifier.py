@@ -36,7 +36,7 @@ class PopperWrapper:
     
 
     
-def run_ilp_training_subprocess(problem_dir, settings_parameters, log_dir=None):
+def run_ilp_training_subprocess(exs_file, bk_file, bias_file, settings_parameters, log_dir=None):
     """Run Popper ILP learning in a separate subprocess for isolated Prolog session."""
     script = f'''
 import json
@@ -53,13 +53,11 @@ def make_pickleable(prog):
         return list(prog)
     return prog
 
-settings = Settings(kbpath=r"{problem_dir}", **{repr(settings_parameters)})
-print("Starting ILP training with timeout:", settings.timeout)
+settings = Settings(ex_file=r"{exs_file}", bk_file=r"{bk_file}", bias_file=r"{bias_file}", **{repr(settings_parameters)})
 prog, score, stats = learn_solution(settings)
 
 
 prog_str = format_prog(prog) if prog else None
-print(f"Learned program")
 # Serialize prog object using pickle and base64 encode for JSON transport
 prog_pickleable = make_pickleable(prog) if prog else None
 prog_pickled = base64.b64encode(pickle.dumps(prog_pickleable)).decode('ascii') if prog_pickleable else None
@@ -67,19 +65,15 @@ prog_pickled = base64.b64encode(pickle.dumps(prog_pickleable)).decode('ascii') i
 result = {{"prog_pickled": prog_pickled, "prog_str": prog_str, "score": list(score) if score else None}}
 print(json.dumps(result))
 '''
-    # Get timeout from settings_parameters (default 60 seconds) and add some buffer time for subprocess overhead
-    #timeout = settings_parameters.get("timeout", 60) + 10
     result = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
         start_new_session=True,  # Start in a new session to isolate from parent process
         cwd=os.getcwd(),
-        #timeout=timeout
     )
-    print(f"ILP training says: {result.stdout}")
     if log_dir:
-        log_stderr(log_dir, f"Training: {problem_dir}", result.returncode, result.stderr)
+        log_stderr(log_dir, f"Training: {bias_file}", result.returncode, result.stderr)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
     stdout_lines = result.stdout.strip().split('\n')
     output = json.loads(stdout_lines[-1])
@@ -93,7 +87,7 @@ print(json.dumps(result))
     return output
 
 
-def run_ilp_validation_subprocess(chebi_id, prog, problem_dir, settings_parameters, log_dir=None):
+def run_ilp_validation_subprocess(chebi_id, prog, problem_dir, predicate_set, settings_parameters, log_dir=None):
     """Run Popper validation in a separate subprocess for isolated Prolog session."""
     # Serialize prog object using pickle and base64 encode
     prog_pickled = base64.b64encode(pickle.dumps(prog)).decode('ascii') if prog else ""
@@ -127,13 +121,12 @@ if prog_pickled:
 else:
     prog = None
 
-settings = Settings(kbpath=r"{problem_dir}/chebi_{chebi_id}", **{repr(settings_parameters)})
+settings = Settings(bk_file=r"{problem_dir}/{predicate_set}/bk_validation.pl", ex_file=r"{problem_dir}/chebi_{chebi_id}/exs_validation.pl", **{repr(settings_parameters)})
 settings.datalog = False
-settings.bk_file = r"{problem_dir}/bk_validation.pl"
-settings.ex_file = r"{problem_dir}/chebi_{chebi_id}/exs_validation.pl"
 
 if prog:
     ilp_tester = Tester(settings)
+    print(bk_file, exs_file)
     pos_covered, neg_covered = ilp_tester.test_prog_all(prog)
     tp = pos_covered.count(1)
     fn = {n_validation_pos} - tp
