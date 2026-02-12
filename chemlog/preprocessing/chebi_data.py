@@ -10,6 +10,7 @@ import requests
 import fastobo
 from rdkit import Chem
 import pandas as pd
+import tqdm
 
 class ChEBIData:
 
@@ -47,6 +48,10 @@ class ChEBIData:
     @property
     def processed_path(self):
         return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "processed.pkl")
+    
+    @property
+    def chembl_fgs_path(self):
+        return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "chembl_fgs.pkl")
 
     def download_chebi(self) -> None:
         if not os.path.exists(self.chebi_path):
@@ -136,6 +141,39 @@ class ChEBIData:
             return g
         with open(self.trans_hierarchy_path, "rb") as f:
             return pickle.load(f)
+        
+    def get_chembl_fgs(self):
+        if not os.path.exists(self.chembl_fgs_path):
+            from rdkit.Chem import FilterCatalog
+
+            # Create a filter catalog with CHEMBL functional groups
+            params = FilterCatalog.FilterCatalogParams()
+            params.AddCatalog(FilterCatalog.FilterCatalogParams.FilterCatalogs.CHEMBL)
+            catalog = FilterCatalog.FilterCatalog(params)
+            fg_matches_by_mol = dict()
+
+            print(f"Calculating FG matches for {len(self.processed)} molecules using CHEMBL catalog with {catalog.GetNumEntries()} entries")
+            for row in tqdm.tqdm(self.processed.itertuples(), desc="Calculating FG matches", total=len(self.processed)):
+                fg_matches_by_mol[row.Index] = []
+                mol = row.mol
+                matches = catalog.GetMatches(mol)
+                for match in matches:
+                    fg_name = match.GetDescription().lower().replace(" ", "_").replace("-", "_")
+                    # replace "/" with "_or_", replace > with "_more_than_", replace < with "_less_than_"
+                    fg_name = fg_name.replace("/", "_or_").replace(">", "_more_than_").replace("<", "_less_than_")
+                    # remove all other non-alphanumeric characters except underscores
+                    fg_name = "".join(c for c in fg_name if c.isalnum() or c == "_")
+                    # add fg_ if the name does not start with a letter
+                    if fg_name and not fg_name[0].isalpha():
+                        fg_name = "fg_" + fg_name
+                    fg_matches_by_mol[row.Index].append(fg_name)
+            with open(self.chembl_fgs_path, "wb") as f:
+                pickle.dump((fg_matches_by_mol), f)
+            return fg_matches_by_mol
+        else:
+            with open(self.chembl_fgs_path, "rb") as f:
+                return pickle.load(f)
+
 
 
 def chebi_to_int(s):
@@ -183,3 +221,13 @@ def term_callback(doc) -> (int, dict):
 
 if __name__ == "__main__":
     data = ChEBIData(chebi_version=244)
+    hierarchy_graph = data.get_trans_hierarchy()
+    print(hierarchy_graph)
+    # get node 232090 and its ancestors
+    node = 232090
+    ancestors = list(hierarchy_graph.predecessors(node))
+    print(f"Ancestors of {node}: {ancestors}")
+    node = 51143
+    descendants = list(hierarchy_graph.successors(node))
+    print(f"Descendants of {node}: len(descendants)={len(descendants)}")
+    print(232090 in descendants)

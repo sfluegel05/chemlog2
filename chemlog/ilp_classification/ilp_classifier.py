@@ -45,22 +45,39 @@ import base64
 from popper.loop import learn_solution
 from popper.util import Settings, format_prog
 
-settings = Settings(kbpath=r"{problem_dir}", **{repr(settings_parameters)})
-prog, score, stats = learn_solution(settings)
-prog_str = format_prog(prog) if prog else None
+def make_pickleable(prog):
+    # If prog is a dict_values or similar, convert to list
+    if hasattr(prog, 'items') or hasattr(prog, 'keys'):
+        return dict(prog)
+    if type(prog).__name__ == 'dict_values':
+        return list(prog)
+    return prog
 
+settings = Settings(kbpath=r"{problem_dir}", **{repr(settings_parameters)})
+print("Starting ILP training with timeout:", settings.timeout)
+prog, score, stats = learn_solution(settings)
+
+
+prog_str = format_prog(prog) if prog else None
+print(f"Learned program")
 # Serialize prog object using pickle and base64 encode for JSON transport
-prog_pickled = base64.b64encode(pickle.dumps(prog)).decode('ascii') if prog else None
+prog_pickleable = make_pickleable(prog) if prog else None
+prog_pickled = base64.b64encode(pickle.dumps(prog_pickleable)).decode('ascii') if prog_pickleable else None
 
 result = {{"prog_pickled": prog_pickled, "prog_str": prog_str, "score": list(score) if score else None}}
 print(json.dumps(result))
 '''
+    # Get timeout from settings_parameters (default 60 seconds) and add some buffer time for subprocess overhead
+    #timeout = settings_parameters.get("timeout", 60) + 10
     result = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
-        cwd=os.getcwd()
+        start_new_session=True,  # Start in a new session to isolate from parent process
+        cwd=os.getcwd(),
+        #timeout=timeout
     )
+    print(f"ILP training says: {result.stdout}")
     if log_dir:
         log_stderr(log_dir, f"Training: {problem_dir}", result.returncode, result.stderr)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
@@ -95,10 +112,18 @@ import base64
 from popper.tester import Tester
 from popper.util import Settings
 
+def make_pickleable(prog):
+    if hasattr(prog, 'items') or hasattr(prog, 'keys'):
+        return dict(prog)
+    if type(prog).__name__ == 'dict_values':
+        return list(prog)
+    return prog
+
 # Deserialize prog object
 prog_pickled = "{prog_pickled}"
 if prog_pickled:
     prog = pickle.loads(base64.b64decode(prog_pickled))
+    prog = make_pickleable(prog)
 else:
     prog = None
 
