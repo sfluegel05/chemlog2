@@ -56,9 +56,9 @@ def resolve_chebi_classes(classification):
     if charge_category == ChargeCategories.SALT.name:
         res.append("24866")  # salt (there is no class peptide salt)
     elif charge_category == ChargeCategories.ANION.name:
-        res.append("25696")
+        res.append("22563")
     elif charge_category == ChargeCategories.CATION.name:
-        res.append("25697")
+        res.append("36961")
     elif charge_category == ChargeCategories.ZWITTERION.name:
         res.append("27369")
     if n_amino_acid_residues >= 2:

@@ -23,6 +23,7 @@ setup(
         'click',
         'tqdm',
         'multiprocess',
+        'clingo'
     ],
     author='sfluegel05',
     author_email='simon.fluegel@uos.de',
