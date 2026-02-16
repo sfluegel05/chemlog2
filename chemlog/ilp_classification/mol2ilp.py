@@ -448,6 +448,7 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
             f.write(f"max_neg_samples: {max_neg_samples}\n")
             f.write(f"max_vars: {max_vars}\n")
             f.write(f"max_body: {max_body}\n")
+            f.write(f"max_clauses: {max_clauses}\n")
             f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
             f.write("popper_settings:\n")
             for key, value in settings_parameters.items():
