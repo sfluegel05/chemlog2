@@ -6,7 +6,7 @@ from typing import Literal
 import networkx as nx
 
 import tqdm
-from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subprocess, run_ilp_validation_subprocess
+from chemlog.ilp_classification.ilp_classifier import PopperWrapper, run_ilp_training_subprocess, run_ilp_validation_subprocess
 from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 import pandas as pd
@@ -78,8 +78,10 @@ class ILPProblemBuilder:
         selected_rows = None
         if rebuild_samples or not os.path.exists(exs_path):
             selected_rows = self.gather_samples_for_chebi_cls(target_id, max_pos_samples, max_neg_samples)
+        
+        #train_rows = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
 
-        if not (os.path.exists(bk_path) and os.path.exists(bias_path)):
+        if not (os.path.exists(bk_path) and os.path.exists(bias_path) and selected_rows is None):
             if selected_rows is None:
                 with open(exs_path, "r") as f:
                     # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
@@ -100,6 +102,7 @@ class ILPProblemBuilder:
                 f"",
                 f"%% max_vars(TODO).",
                 f"%% max_body(TODO).",
+                f"non_datalog.",
                 f"",
                 f"head_pred(chebi_{target_id}, 1)."] + [
                 f"body_pred({pred},{arity})." for pred, arity in body_predicates
@@ -204,6 +207,7 @@ class ILPProblemBuilder:
             neg_samples.extend(group.index.tolist())
         df_neg = df_neg.loc[neg_samples[:max_neg_samples]]
 
+        os.makedirs(os.path.join(self.problem_dir, f"chebi_{target_id}"), exist_ok=True)
         with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
             for mol_id in df_pos.index:
                 f.write(f"pos(chebi_{target_id}({mol_id})).\n")
@@ -313,11 +317,11 @@ def mol_to_prolog_muggleton(mol, molecule_id="mol1"):
     return prolog_atoms, prolog_bonds
 
 
-def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100):
+def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100):
     if not chebi_splits_file:
         chebi_splits_file = os.path.join("data", "splits_v244.csv")
     ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set)
-    ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples, predicate_set=predicate_set)
+    ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples, predicate_set=predicate_set, rebuild_samples=rebuild_samples)
 
 def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, max_vars=6, max_body=6, **kwargs):
     if not chebi_splits_file:
@@ -352,6 +356,8 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
         f.write("popper_settings:\n")
         for key, value in settings_parameters.items():
             f.write(f"\t{key}: {value}\n")
+
+    wrapper = PopperWrapper(settings_parameters)
     
     for chebi_id in classes_list:
         start_time = time.perf_counter()
@@ -359,7 +365,8 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
         exs_path, bk_path, bias_path = ilp_builder.build_ilp_problem(chebi_id, rebuild_samples=rebuild_samples, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
         
         # Run training in subprocess (isolated Prolog session)
-        train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
+        #train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
+        train_result = wrapper.solve(chebi_id, exs_path, bk_path, bias_path)
         prog = train_result["prog"]  # actual prog object
         prog_str = train_result["prog_str"]  # string representation for display/storage
         score = train_result["score"]
@@ -367,19 +374,26 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
         print(f"ChEBI:{chebi_id} - Score: {score}")
         print(f"    Learned program:\n{prog_str}")
         
-        # Run validation in subprocess (isolated Prolog session)
-        conf_matrix = run_ilp_validation_subprocess(
-            chebi_id, prog,
-            problem_dir=ilp_builder.problem_dir, 
-            predicate_set=ilp_builder.predicate_set,
-            settings_parameters=settings_parameters,
-            log_dir=results_dir
-        )
-        #except Exception as e:
-        #    print(f"Error processing ChEBI:{chebi_id} - {e}")
-        #    prog_str = None
-        #    score = None
-        #    conf_matrix = None
+        validate = False
+        if validate:
+            # Run validation in subprocess (isolated Prolog session)
+            print(f"Validating ChEBI:{chebi_id}...")
+            print(f"    Validation exs file: {os.path.join(ilp_builder.problem_dir, f'chebi_{chebi_id}', 'exs_validation.pl')}")
+            print(f"    Validation bk file: {os.path.join(ilp_builder.problem_dir, predicate_set, 'bk_validation.pl')}")
+            print(f"    Validation bias file: {bias_path}")
+            conf_matrix = run_ilp_validation_subprocess(
+                chebi_id, prog,
+                exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_validation.pl"),
+                bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_validation.pl"),
+                bias_file=bias_path,
+                settings_parameters=settings_parameters,
+                log_dir=results_dir
+            )
+            #except Exception as e:
+            #    print(f"Error processing ChEBI:{chebi_id} - {e}")
+            #    prog_str = None
+            #    score = None
+            #    conf_matrix = None
         
         with open(os.path.join(results_dir, "results.json"), "a+") as f:
             result_entry = {
@@ -387,7 +401,7 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
                 "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
                 "time_taken": time.perf_counter() - start_time,
                 "program": prog_str,
-                "validation_score": conf_matrix,
+                "validation_score": conf_matrix if validate else None,
             }
             f.write(json.dumps(result_entry) + "\n")
 
@@ -414,5 +428,5 @@ if __name__ == "__main__":
             classes = [line.strip() for line in f.readlines()]
         
         if args.build_validation:
-            build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, predicate_set=args.predicate_set, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples)
+            build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples)
         learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, timeout=args.timeout, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, max_vars=args.max_vars, max_body=args.max_body, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
