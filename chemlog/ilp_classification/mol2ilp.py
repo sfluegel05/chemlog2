@@ -56,6 +56,7 @@ class ILPProblemBuilder:
             
     def build_train_bk(self):
         bk_dir = os.path.join(self.problem_dir, self.predicate_set)
+        os.makedirs(bk_dir, exist_ok=True)
         train_rows = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
 
         prolog_lines, body_predicates = build_background_muggleton(train_rows) if self.muggleton else build_background_chemlog(train_rows)
