@@ -97,13 +97,13 @@ class PopperWrapper:
             # Clear cache
             from janus_swi import query_once
             query_once("catch(retractall(pos(_)), _, (abolish(pos/1), true))")
-            query_once("catch(retractall(pos_index(_)), _, (abolish(pos_index/1), true))")
+            query_once("catch(retractall(pos_index(_)), _, (abolish(pos_index/2), true))")
             query_once("catch(retractall(neg(_)), _, (abolish(neg/1), true))")
-            query_once("catch(retractall(neg_index(_)), _, (abolish(neg_index/1), true))")
-            query_once("catch(retractall(neg_fact(_)), _, (abolish(neg_fact/1), true))")
+            query_once("catch(retractall(neg_index(_)), _, (abolish(neg_index/2), true))")
+            query_once("catch(retractall(neg_fact(_)), _, (abolish(neg_fact/2), true))")
             num_pos = query_once('findall(_K, pos_index(_K, _Atom), _S), length(_S, N)')['N']
             num_neg = query_once('findall(_K, neg_index(_K, _Atom), _S), length(_S, N)')['N']
-            print(f"Reset cache to {num_pos} positive and {num_neg} negative examples.")
+            print(f"Reset cache to {num_pos} positive and {num_neg} negative examples.") # should be 0 after retracting all examples
 
             # set ex_file 
             self.settings.ex_file = exs_file
