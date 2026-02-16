@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chemlog"
+version = "1.0.5"
+description = "Peptide classifier for ChEBI / PubChem"
+readme = "README.md"
+license = "GPL-3.0-only"
+authors = [
+    { name = "sfluegel05", email = "simon.fluegel@uos.de" },
+]
+dependencies = [
+    "fastobo",
+    "networkx",
+    "pandas",
+    "rdkit",
+    "requests",
+    "tqdm",
+    "click",
+    "gavel",
+    "numpy>=2.0.0",
+    "multiprocess",
+    "clingo",
+]
+
+[tool.setuptools.packages.find]
+
+[tool.setuptools.package-data]
+chemlog = ["**/*.pl"]
