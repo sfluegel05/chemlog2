@@ -81,8 +81,6 @@ class PopperWrapper:
         self.tester = None
 
     def solve(self, chebi_id, exs_file, bk_file, bias_file):
-        t1 = time.time()
-
         if self.settings is None:
             self.settings = Settings(ex_file=exs_file, bk_file=bk_file, bias_file=bias_file, **self.settings_parameters)
             self.settings.nonoise = not self.settings.noisy
@@ -96,9 +94,9 @@ class PopperWrapper:
             self.settings.head_pred = f"chebi_{chebi_id}"
             # Clear cache
             from janus_swi import query_once
-            query_once("(retractall(pos(_)) ; abolish(pos/1), true)")
+            query_once("abolish(pos/1), true")
             query_once("(retractall(pos_index(_, _)) ; abolish(pos_index/2), true)")
-            query_once("(retractall(neg(_)) ; abolish(neg/1), true)")
+            query_once("abolish(neg/1), true")
             query_once("(retractall(neg_index(_, _)) ; abolish(neg_index/2), true)")
             query_once("(retractall(neg_fact(_, _)) ; abolish(neg_fact/2), true)")
             num_pos = query_once('findall(_K, pos_index(_K, _Atom), _S), length(_S, N)')['N']
@@ -110,15 +108,13 @@ class PopperWrapper:
             # reload tester with new examples
             reload_tester(self.tester, self.settings)
 
-
         # learn_solution
         self.settings.solution_found = False
         self.settings.solution = None
         self.settings.best_prog_score = None
         bkcons = get_bk_cons(self.settings, self.tester)
         self.settings.datalog = False
-        time_so_far = time.time()-t1
-        timeout(self.settings, popper, (self.settings, self.tester, bkcons), timeout_duration=int(self.settings.timeout-time_so_far),)
+        timeout(self.settings, popper, (self.settings, self.tester, bkcons), timeout_duration=int(self.settings.timeout),)
         prog_str = format_prog(self.settings.solution) if self.settings.solution else None
         return {
             "prog": self.settings.solution, 
