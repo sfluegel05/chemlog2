@@ -54,6 +54,33 @@ class ILPProblemBuilder:
             else:
                 raise ValueError(f"Unknown split '{split}' for ChEBI ID {chebi_id}")
             
+    def build_train_bk(self):
+        bk_dir = os.path.join(self.problem_dir, self.predicate_set)
+        train_rows = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
+
+        prolog_lines, body_predicates = build_background_muggleton(train_rows) if self.muggleton else build_background_chemlog(train_rows)
+        if self.chembl_fgs:
+            prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, train_rows)
+            prolog_lines += prolog_lines_fgs
+            body_predicates += body_predicates_fgs
+
+        with open(os.path.join(bk_dir, "bk.pl"), "w+") as f:
+            f.write("\n".join(prolog_lines) + "\n")
+        # build bias file
+        bias_lines = [
+            f"%% (bias file without settings)",
+            f"",
+            f"%% max_vars(TODO).",
+            f"%% max_body(TODO).",
+            f"",
+            f"head_pred(chebi_UNKNOWN, 1)."] + [
+            f"body_pred({pred},{arity})." for pred, arity in body_predicates
+        ]
+        with open(os.path.join(bk_dir, "bias.pl"), "w+") as f:
+            f.write("\n".join(bias_lines) + "\n")
+        
+        print(f"ILP train bk saved to {bk_dir}")
+        return bk_dir
         
     def build_ilp_problem(self, target_id, rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
         """
@@ -72,47 +99,19 @@ class ILPProblemBuilder:
         os.makedirs(bk_dir, exist_ok=True)
 
         exs_path = os.path.join(target_dir, "exs.pl")
-        bk_path = os.path.join(bk_dir, "bk.pl")
         bias_path = os.path.join(bk_dir, f"bias_max_vars={self.max_vars}_max_body={self.max_body}.pl")
 
         selected_rows = None
         if rebuild_samples or not os.path.exists(exs_path):
             selected_rows = self.gather_samples_for_chebi_cls(target_id, max_pos_samples, max_neg_samples)
         
-        #train_rows = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
 
-        if not (os.path.exists(bk_path) and os.path.exists(bias_path) and selected_rows is None):
-            if selected_rows is None:
-                with open(exs_path, "r") as f:
-                    # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
-                    selected_ids = [line.strip().split("(")[-1].split(")")[0] for line in f.readlines() if line.strip() and not line.startswith("%")]
-                    selected_rows = self.samples_df[[str(id) in selected_ids for id in self.samples_df.index]]
-
-            prolog_lines, body_predicates = build_background_muggleton(selected_rows) if self.muggleton else build_background_chemlog(selected_rows)
-            if self.chembl_fgs:
-                prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, selected_rows)
-                prolog_lines += prolog_lines_fgs
-                body_predicates += body_predicates_fgs
-
-            with open(bk_path, "w+") as f:
-                f.write("\n".join(prolog_lines) + "\n")
-            # build bias file
-            bias_lines = [
-                f"%% CHEBI:{target_id} (bias file without settings)",
-                f"",
-                f"%% max_vars(TODO).",
-                f"%% max_body(TODO).",
-                f"non_datalog.",
-                f"",
-                f"head_pred(chebi_{target_id}, 1)."] + [
-                f"body_pred({pred},{arity})." for pred, arity in body_predicates
-            ]
-            with open(os.path.join(bk_dir, "bias.pl"), "w+") as f:
-                f.write("\n".join(bias_lines) + "\n")
-            
-            print(f"ILP problem for ChEBI:{target_id} saved to {target_dir}")
-
-
+        #if not (os.path.exists(bk_path) and os.path.exists(bias_path) and selected_rows is None):
+        #    if selected_rows is None:
+        #        with open(exs_path, "r") as f:
+        #            # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
+        #            selected_ids = [line.strip().split("(")[-1].split(")")[0] for line in f.readlines() if line.strip() and not line.startswith("%")]
+        #            selected_rows = self.samples_df[[str(id) in selected_ids for id in self.samples_df.index]]
         # use bias.pl to generate settings-specific bias file
         with open(os.path.join(bk_dir, "bias.pl"), "r") as f:
             bias_content = f.read()
@@ -122,7 +121,7 @@ class ILPProblemBuilder:
         with open(bias_path, "w+") as f:
             f.write(bias_content)
 
-        return exs_path, bk_path, bias_path
+        return exs_path, bias_path
 
     def build_validation(self, target_ids, predicate_set: Literal["atoms", "chembl_fgs"], rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
         # validation bk knowledge
@@ -358,15 +357,20 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
             f.write(f"\t{key}: {value}\n")
 
     wrapper = PopperWrapper(settings_parameters)
+
+    if rebuild_samples:
+        bk_dir = ilp_builder.build_train_bk()
+    else:
+        bk_dir = os.path.join(ilp_builder.problem_dir, predicate_set)
     
     for chebi_id in classes_list:
         start_time = time.perf_counter()
         #try: 
-        exs_path, bk_path, bias_path = ilp_builder.build_ilp_problem(chebi_id, rebuild_samples=rebuild_samples, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
+        exs_path, bias_path = ilp_builder.build_ilp_problem(chebi_id, rebuild_samples=rebuild_samples, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
         
         # Run training in subprocess (isolated Prolog session)
         #train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
-        train_result = wrapper.solve(chebi_id, exs_path, bk_path, bias_path)
+        train_result = wrapper.solve(chebi_id, exs_path, os.path.join(bk_dir, "bk.pl"), bias_path)
         prog = train_result["prog"]  # actual prog object
         prog_str = train_result["prog_str"]  # string representation for display/storage
         score = train_result["score"]
@@ -374,7 +378,7 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
         print(f"ChEBI:{chebi_id} - Score: {score}")
         print(f"    Learned program:\n{prog_str}")
         
-        validate = False
+        validate = False # todo restructure validation
         if validate:
             # Run validation in subprocess (isolated Prolog session)
             print(f"Validating ChEBI:{chebi_id}...")

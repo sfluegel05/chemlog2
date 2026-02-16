@@ -103,7 +103,7 @@ class PopperWrapper:
             query_once("(retractall(neg_fact(_, _)) ; abolish(neg_fact/2), true)")
             num_pos = query_once('findall(_K, pos_index(_K, _Atom), _S), length(_S, N)')['N']
             num_neg = query_once('findall(_K, neg_index(_K, _Atom), _S), length(_S, N)')['N']
-            print(f"Reset cache to {num_pos} positive and {num_neg} negative examples.") # should be 0 after retracting all examples
+            assert num_pos == 0 and num_neg == 0, f"Cache not cleared properly: {num_pos} positive and {num_neg} negative examples remain."
 
             # set ex_file 
             self.settings.ex_file = exs_file
@@ -113,6 +113,8 @@ class PopperWrapper:
 
         # learn_solution
         self.settings.solution_found = False
+        self.settings.solution = None
+        self.settings.best_prog_score = None
         bkcons = get_bk_cons(self.settings, self.tester)
         self.settings.datalog = False
         time_so_far = time.time()-t1
