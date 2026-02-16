@@ -12,16 +12,30 @@ import time
 from janus_swi import consult, query_once
 from bitarray.util import ones
 
-def log_stderr(log_dir, phase, stderr_code, stderr_content):
-    """Write stderr content to log file with timestamp."""
-    if not stderr_content.strip():
+def log_subprocess_output(log_dir, phase, result):
+    """Write subprocess stdout/stderr to the run log with timestamp."""
+    if not log_dir:
         return
-    log_file = os.path.join(log_dir, "subprocess.log")
+    log_file = os.path.join(log_dir, "run.log")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_file, "a") as f:
-        f.write(f"\n[{timestamp}] === {phase} (Return code: {stderr_code}) ===\n")
-        f.write(stderr_content)
-        f.write("\n")
+    if isinstance(result, str):
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"\n[{timestamp}] === {phase} ===\n")
+            for line in result.splitlines():
+                f.write(f"[{timestamp}] {line}\n")
+        return
+    if not result.stdout.strip() and not result.stderr.strip():
+        return
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"\n[{timestamp}] === {phase} (Return code: {result.returncode}) ===\n")
+        if result.stdout.strip():
+            f.write("--- stdout ---\n")
+            for line in result.stdout.splitlines():
+                f.write(f"[{timestamp}] [stdout] {line}\n")
+        if result.stderr.strip():
+            f.write("--- stderr ---\n")
+            for line in result.stderr.splitlines():
+                f.write(f"[{timestamp}] [stderr] {line}\n")
 
 
 def reload_tester(tester, settings):
@@ -86,9 +100,6 @@ class PopperWrapper:
             self.settings.nonoise = not self.settings.noisy
             self.settings.datalog = False
 
-            with self.settings.stats.duration('load data'):
-                self.tester = Tester(self.settings)
-
         else:
             # override head_pred
             self.settings.head_pred = f"chebi_{chebi_id}"
@@ -105,9 +116,11 @@ class PopperWrapper:
 
             # set ex_file 
             self.settings.ex_file = exs_file
-            # reload tester with new examples
-            reload_tester(self.tester, self.settings)
+            self.settings.bk_file = bk_file
+            self.settings.bias_file = bias_file
 
+        with self.settings.stats.duration('load data'):
+            self.tester = Tester(self.settings)
         # learn_solution
         self.settings.solution_found = False
         self.settings.solution = None
@@ -133,24 +146,11 @@ import base64
 from popper.loop import learn_solution
 from popper.util import Settings, format_prog
 
-def make_pickleable(prog):
-    # If prog is a dict_values or similar, convert to list
-    if hasattr(prog, 'items') or hasattr(prog, 'keys'):
-        return dict(prog)
-    if type(prog).__name__ == 'dict_values':
-        return list(prog)
-    return prog
-
 settings = Settings(ex_file=r"{exs_file}", bk_file=r"{bk_file}", bias_file=r"{bias_file}", **{repr(settings_parameters)})
 prog, score, stats = learn_solution(settings)
-
-
 prog_str = format_prog(prog) if prog else None
-# Serialize prog object using pickle and base64 encode for JSON transport
-prog_pickleable = make_pickleable(prog) if prog else None
-prog_pickled = base64.b64encode(pickle.dumps(prog_pickleable)).decode('ascii') if prog_pickleable else None
 
-result = {{"prog_pickled": prog_pickled, "prog_str": prog_str, "score": list(score) if score else None}}
+result = {{"prog_str": prog_str, "score": list(score) if score else None}}
 print(json.dumps(result))
 '''
     result = subprocess.run(
@@ -161,19 +161,14 @@ print(json.dumps(result))
         cwd=os.getcwd(),
     )
     if log_dir:
-        log_stderr(log_dir, f"Training: {bias_file}", result.returncode, result.stderr)
+        log_subprocess_output(log_dir, f"Training: {bias_file}", result)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
     stdout_lines = result.stdout.strip().split('\n')
-    output = json.loads(stdout_lines[-1])
-    
-    # Deserialize the prog object
-    if output["prog_pickled"]:
-        output["prog"] = pickle.loads(base64.b64decode(output["prog_pickled"]))
-        # save to file
-        with open(os.path.join(log_dir,"learned_program.pkl"), "wb") as f:
-            pickle.dump(output["prog"], f)
-    else:
-        output["prog"] = None
+    try:
+        output = json.loads(stdout_lines[-1])
+    except json.decoder.JSONDecodeError:
+        output = {"prog_str": None, "score": None}
+        print(f"    Failed to parse JSON output. See logs for details.")
     
     return output
 
@@ -238,22 +233,21 @@ print(json.dumps(result))
         )
     except subprocess.TimeoutExpired:
         if log_dir:
-            log_stderr(log_dir, f"Validation: chebi_{chebi_id}", -1, f"Validation timed out after {timeout} seconds")
+            log_subprocess_output(log_dir, f"Validation: chebi_{chebi_id}", f"Validation timed out after {timeout} seconds")
         print(f"    Validation timed out after {timeout} seconds")
         return {"TP": 0, "FN": n_validation_pos, "TN": n_validation_neg, "FP": 0, "timeout": True}
     
+    if log_dir:
+        log_subprocess_output(log_dir, f"Validation: chebi_{chebi_id}", result)
     try:
         stdout_lines = result.stdout.strip().split('\n')
         conf_matrix = json.loads(stdout_lines[-1])
-        print("stdout_lines:", stdout_lines)
     except json.decoder.JSONDecodeError:
         conf_matrix = {"TP": 0, "FN": n_validation_pos, "TN": n_validation_neg, "FP": 0}
         if log_dir:
-            log_stderr(log_dir, f"Validation: chebi_{chebi_id}", result.returncode, f"Failed to parse JSON output. Raw stdout:\n{result.stdout}")
+            log_subprocess_output(log_dir, f"Validation: chebi_{chebi_id}", f"Failed to parse JSON output. Raw stdout:\n{result.stdout}")
         print(f"    Failed to parse JSON output. See logs for details.")
         return conf_matrix
-    if log_dir:
-        log_stderr(log_dir, f"Validation: chebi_{chebi_id}", result.returncode, result.stderr)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
     print(f"    Validation set: TP: {conf_matrix['TP']}, FN: {conf_matrix['FN']}, TN: {conf_matrix['TN']}, FP: {conf_matrix['FP']}")
     return conf_matrix

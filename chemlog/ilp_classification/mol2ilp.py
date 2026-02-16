@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 import json
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Literal
 import networkx as nx
 
@@ -13,9 +15,53 @@ import pandas as pd
 import time
 
 
+@contextmanager
+def tee_output(log_path):
+    """Tee stdout/stderr to a log file while preserving console output."""
+    log_file = open(log_path, "a", encoding="utf-8")
+
+    class _Tee:
+        def __init__(self, *streams):
+            self._streams = streams
+            self._buffer = ""
+
+        def _emit(self, line, end=""):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for stream in self._streams:
+                stream.write(f"[{timestamp}] {line}{end}")
+
+        def write(self, data):
+            self._buffer += data
+            while True:
+                newline_index = self._buffer.find("\n")
+                if newline_index == -1:
+                    break
+                line = self._buffer[:newline_index].rstrip("\r")
+                self._buffer = self._buffer[newline_index + 1:]
+                self._emit(line, "\n")
+
+        def flush(self):
+            if self._buffer:
+                self._emit(self._buffer)
+                self._buffer = ""
+            for stream in self._streams:
+                stream.flush()
+
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = _Tee(sys.stdout, log_file)
+    sys.stderr = _Tee(sys.stderr, log_file)
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        log_file.close()
+
+
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs"] = "atoms", max_vars=6, max_body=6):
+    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs"] = "atoms", max_vars=6, max_body=6, max_clauses=2):
         self.chembl_fgs = predicate_set == "chembl_fgs"
         self.predicate_set = predicate_set
         self.chebi_version = chebi_version
@@ -26,6 +72,7 @@ class ILPProblemBuilder:
         self.muggleton = muggleton
         self.max_vars = max_vars
         self.max_body = max_body
+        self.max_clauses = max_clauses
 
         self.chebi_data = ChEBIData(chebi_version=self.chebi_version)
         # we need 2 versions of the graph: one with directed transitive edges (e.g. to find all subclasses of x)
@@ -55,6 +102,7 @@ class ILPProblemBuilder:
                 raise ValueError(f"Unknown split '{split}' for ChEBI ID {chebi_id}")
             
     def build_train_bk(self):
+        # big BK (for all training samples) -> not very efficient
         bk_dir = os.path.join(self.problem_dir, self.predicate_set)
         os.makedirs(bk_dir, exist_ok=True)
         train_rows = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
@@ -93,12 +141,12 @@ class ILPProblemBuilder:
             max_pos_samples (int): Maximum number of positive samples to include.
             max_neg_samples (int): Maximum number of negative samples to include.
         """
-        
         target_dir = os.path.join(self.problem_dir, f"chebi_{target_id}")
         bk_dir = os.path.join(target_dir, self.predicate_set)
         os.makedirs(target_dir, exist_ok=True)
         os.makedirs(bk_dir, exist_ok=True)
 
+        bk_path = os.path.join(bk_dir, "bk.pl")
         exs_path = os.path.join(target_dir, "exs.pl")
         bias_path = os.path.join(bk_dir, f"bias_max_vars={self.max_vars}_max_body={self.max_body}.pl")
 
@@ -106,21 +154,48 @@ class ILPProblemBuilder:
         if rebuild_samples or not os.path.exists(exs_path):
             selected_rows = self.gather_samples_for_chebi_cls(target_id, max_pos_samples, max_neg_samples)
         
+        if not (os.path.exists(bk_path) and os.path.exists(bias_path) and selected_rows is None):
+            if selected_rows is None:
+                with open(exs_path, "r") as f:
+                    # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
+                    selected_ids = [line.strip().split("(")[-1].split(")")[0] for line in f.readlines() if line.strip() and not line.startswith("%")]
+                    selected_rows = self.samples_df[[str(id) in selected_ids for id in self.samples_df.index]]
 
-        #if not (os.path.exists(bk_path) and os.path.exists(bias_path) and selected_rows is None):
-        #    if selected_rows is None:
-        #        with open(exs_path, "r") as f:
-        #            # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
-        #            selected_ids = [line.strip().split("(")[-1].split(")")[0] for line in f.readlines() if line.strip() and not line.startswith("%")]
-        #            selected_rows = self.samples_df[[str(id) in selected_ids for id in self.samples_df.index]]
+            prolog_lines, body_predicates = build_background_muggleton(selected_rows) if self.muggleton else build_background_chemlog(selected_rows)
+            if self.chembl_fgs:
+                prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, selected_rows)
+                prolog_lines += prolog_lines_fgs
+                body_predicates += body_predicates_fgs
+
+            with open(bk_path, "w+") as f:
+                f.write("\n".join(prolog_lines) + "\n")
+            # build bias file
+            bias_lines = [
+                f"%% CHEBI:{target_id} (bias file without settings)",
+                f"",
+                f"%% max_vars(TODO).",
+                f"%% max_body(TODO).",
+                f"%% max_clauses(TODO).",
+                f"",
+                f"head_pred(chebi_{target_id}, 1)."] + [
+                f"body_pred({pred},{arity})." for pred, arity in body_predicates
+            ]
+            with open(os.path.join(bk_dir, "bias.pl"), "w+") as f:
+                f.write("\n".join(bias_lines) + "\n")
+            
+            print(f"ILP problem for ChEBI:{target_id} saved to {target_dir}")
+    
+
         # use bias.pl to generate settings-specific bias file
         with open(os.path.join(bk_dir, "bias.pl"), "r") as f:
             bias_content = f.read()
         bias_content = bias_content.replace("%% max_vars(TODO).", f"max_vars({self.max_vars}).")
         bias_content = bias_content.replace("%% max_body(TODO).", f"max_body({self.max_body}).")
-
+        bias_content = bias_content.replace("%% max_clauses(TODO).", f"max_clauses({self.max_clauses}).") 
         with open(bias_path, "w+") as f:
             f.write(bias_content)
+
+
 
         return exs_path, bias_path
 
@@ -144,8 +219,26 @@ class ILPProblemBuilder:
                 self.gather_validation_samples(target_id, validation_samples_df, self.undirected_graph, max_pos_samples, max_neg_samples)
 
     def get_closest_negatives(self, samples: pd.DataFrame, target_id, n_samples=100):
-        # todo implement bfs 
-        return self.samples_df.sample(n_samples)
+        # get closest samples in terms of distance in the chebi graph
+        if n_samples >= len(samples):
+            return samples
+        import queue 
+        q = queue.Queue()
+        q.put(int(target_id))
+        visited = set()
+        selected = set()
+        with open(os.path.join(self.problem_dir, "samples_idx.txt"), "w+") as f:
+             f.write("\n".join(str(id) for id in samples.index))
+        samples_index = list(str(id) for id in samples.index)
+        while not q.empty() and len(selected) < n_samples:
+            current = q.get()
+            if str(current) in samples_index:
+                selected.add(str(current))
+            for neighbor in self.undirected_graph.neighbors(current):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    q.put(neighbor)
+        return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
 
 
     def gather_samples_for_chebi_cls(self, target_id, max_pos_samples=100, max_neg_samples=100) -> pd.DataFrame:
@@ -323,7 +416,7 @@ def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None
     ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set)
     ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples, predicate_set=predicate_set, rebuild_samples=rebuild_samples)
 
-def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, max_vars=6, max_body=6, **kwargs):
+def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, max_vars=6, max_body=6, max_clauses=2, **kwargs):
     if not chebi_splits_file:
         chebi_splits_file = os.path.join("data", "splits_v244.csv")
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -332,83 +425,86 @@ def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_split
     with open(os.path.join(results_dir, "results.json"), "w+") as f:
         f.write("")  # create empty results file
 
-    ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set, max_vars=max_vars, max_body=max_body)
+    log_path = os.path.join(results_dir, "run.log")
 
-    # Build settings parameters for Popper
-    settings_parameters = {
-        "noisy": True,
-        "anytime_solver": "nuwls",
-        "timeout": timeout,
-    }
-    settings_parameters.update(kwargs)
-    
-    with open(os.path.join(results_dir, "config.yml"), "w+") as f:
-        f.write(f"chebi_version: {chebi_version}\n")
-        f.write(f"chebi_splits_file: {chebi_splits_file}\n")
-        f.write(f"timeout: {timeout}\n")
-        f.write(f"rebuild_samples: {rebuild_samples}\n")
-        f.write(f"predicate_set: {predicate_set}\n")
-        f.write(f"max_pos_samples: {max_pos_samples}\n")
-        f.write(f"max_neg_samples: {max_neg_samples}\n")
-        f.write(f"max_vars: {max_vars}\n")
-        f.write(f"max_body: {max_body}\n")
-        f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
-        f.write("popper_settings:\n")
-        for key, value in settings_parameters.items():
-            f.write(f"\t{key}: {value}\n")
+    with tee_output(log_path):
+        ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set, max_vars=max_vars, max_body=max_body, max_clauses=max_clauses)
 
-    wrapper = PopperWrapper(settings_parameters)
+        # Build settings parameters for Popper
+        settings_parameters = {
+            "noisy": True,
+            "anytime_solver": "nuwls",
+            "timeout": timeout,
+        }
+        settings_parameters.update(kwargs)
+        
+        with open(os.path.join(results_dir, "config.yml"), "w+") as f:
+            f.write(f"chebi_version: {chebi_version}\n")
+            f.write(f"chebi_splits_file: {chebi_splits_file}\n")
+            f.write(f"timeout: {timeout}\n")
+            f.write(f"rebuild_samples: {rebuild_samples}\n")
+            f.write(f"predicate_set: {predicate_set}\n")
+            f.write(f"max_pos_samples: {max_pos_samples}\n")
+            f.write(f"max_neg_samples: {max_neg_samples}\n")
+            f.write(f"max_vars: {max_vars}\n")
+            f.write(f"max_body: {max_body}\n")
+            f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
+            f.write("popper_settings:\n")
+            for key, value in settings_parameters.items():
+                f.write(f"\t{key}: {value}\n")
 
-    if rebuild_samples:
-        bk_dir = ilp_builder.build_train_bk()
-    else:
-        bk_dir = os.path.join(ilp_builder.problem_dir, predicate_set)
-    
-    for chebi_id in classes_list:
-        start_time = time.perf_counter()
-        #try: 
-        exs_path, bias_path = ilp_builder.build_ilp_problem(chebi_id, rebuild_samples=rebuild_samples, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
-        
-        # Run training in subprocess (isolated Prolog session)
-        #train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
-        train_result = wrapper.solve(chebi_id, exs_path, os.path.join(bk_dir, "bk.pl"), bias_path)
-        prog = train_result["prog"]  # actual prog object
-        prog_str = train_result["prog_str"]  # string representation for display/storage
-        score = train_result["score"]
-        
-        print(f"ChEBI:{chebi_id} - Score: {score}")
-        print(f"    Learned program:\n{prog_str}")
-        
-        validate = False # todo restructure validation
-        if validate:
-            # Run validation in subprocess (isolated Prolog session)
-            print(f"Validating ChEBI:{chebi_id}...")
-            print(f"    Validation exs file: {os.path.join(ilp_builder.problem_dir, f'chebi_{chebi_id}', 'exs_validation.pl')}")
-            print(f"    Validation bk file: {os.path.join(ilp_builder.problem_dir, predicate_set, 'bk_validation.pl')}")
-            print(f"    Validation bias file: {bias_path}")
-            conf_matrix = run_ilp_validation_subprocess(
-                chebi_id, prog,
-                exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_validation.pl"),
-                bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_validation.pl"),
-                bias_file=bias_path,
-                settings_parameters=settings_parameters,
-                log_dir=results_dir
-            )
-            #except Exception as e:
-            #    print(f"Error processing ChEBI:{chebi_id} - {e}")
-            #    prog_str = None
-            #    score = None
-            #    conf_matrix = None
-        
-        with open(os.path.join(results_dir, "results.json"), "a+") as f:
-            result_entry = {
-                "chebi_id": chebi_id,
-                "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
-                "time_taken": time.perf_counter() - start_time,
-                "program": prog_str,
-                "validation_score": conf_matrix if validate else None,
-            }
-            f.write(json.dumps(result_entry) + "\n")
+        wrapper = PopperWrapper(settings_parameters)
+
+        #if rebuild_samples:
+            #bk_dir = ilp_builder.build_train_bk()
+        #else:
+            #bk_dir = os.path.join(ilp_builder.problem_dir, predicate_set)
+        for chebi_id in classes_list:
+            start_time = time.perf_counter()
+            #try: 
+            exs_path, bias_path = ilp_builder.build_ilp_problem(chebi_id, rebuild_samples=rebuild_samples, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
+            bk_dir = os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", predicate_set)
+            
+            # Run training in subprocess (isolated Prolog session)
+            #train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
+            print(f"Training ChEBI:{chebi_id}")
+            train_result = run_ilp_training_subprocess(exs_path, os.path.join(bk_dir, "bk.pl"), bias_path, settings_parameters, log_dir=results_dir)
+            prog_str = train_result["prog_str"]  # string representation for display/storage
+            score = train_result["score"]
+            
+            print(f"ChEBI:{chebi_id} - Score: {score}")
+            print(f"    Learned program:\n{prog_str}")
+            
+            validate = False # todo restructure validation
+            if validate:
+                # Run validation in subprocess (isolated Prolog session)
+                print(f"Validating ChEBI:{chebi_id}...")
+                print(f"    Validation exs file: {os.path.join(ilp_builder.problem_dir, f'chebi_{chebi_id}', 'exs_validation.pl')}")
+                print(f"    Validation bk file: {os.path.join(ilp_builder.problem_dir, predicate_set, 'bk_validation.pl')}")
+                print(f"    Validation bias file: {bias_path}")
+                conf_matrix = run_ilp_validation_subprocess(
+                    chebi_id, prog_str,
+                    exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_validation.pl"),
+                    bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_validation.pl"),
+                    bias_file=bias_path,
+                    settings_parameters=settings_parameters,
+                    log_dir=results_dir
+                )
+                #except Exception as e:
+                #    print(f"Error processing ChEBI:{chebi_id} - {e}")
+                #    prog_str = None
+                #    score = None
+                #    conf_matrix = None
+            
+            with open(os.path.join(results_dir, "results.json"), "a+") as f:
+                result_entry = {
+                    "chebi_id": chebi_id,
+                    "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
+                    "time_taken": time.perf_counter() - start_time,
+                    "program": prog_str,
+                    "validation_score": conf_matrix if validate else None,
+                }
+                f.write(json.dumps(result_entry) + "\n")
 
 
 if __name__ == "__main__":
@@ -421,6 +517,7 @@ if __name__ == "__main__":
         parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
         parser.add_argument("--max_vars", type=int, default=6, help="Maximum number of variables in learned rules.")
         parser.add_argument("--max_body", type=int, default=6, help="Maximum number of body literals in learned rules.")
+        parser.add_argument("--max_clauses", type=int, default=2, help="Maximum number of clauses in the learned program.")
         parser.add_argument("--max_pos_samples", type=int, default=100, help="Maximum number of positive samples per class.")
         parser.add_argument("--max_neg_samples", type=int, default=100, help="Maximum number of negative samples per class.")
         parser.add_argument("--rebuild_samples", action="store_true", help="Whether to rebuild train bk.pl and exs.pl even if they already exist.")
@@ -434,4 +531,4 @@ if __name__ == "__main__":
         
         if args.build_validation:
             build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples)
-        learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, timeout=args.timeout, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, max_vars=args.max_vars, max_body=args.max_body, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
+        learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, timeout=args.timeout, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, max_vars=args.max_vars, max_body=args.max_body, max_clauses=args.max_clauses, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
