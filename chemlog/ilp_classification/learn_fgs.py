@@ -101,3 +101,21 @@ class FGILPProblemBuilder(ILPProblemBuilder):
         print(f"Training on {len(pos_samples)} positive and {len(neg_samples)} negative samples")
 
         return pd.concat([pos_samples, neg_samples])
+
+    def gather_validation_samples(self, target_id, validation_samples_df, max_pos_samples=100, max_neg_samples=100) -> tuple[int, int]:
+
+        df_pos = validation_samples_df[validation_samples_df[f"has_part_{target_id}"]]
+        df_neg = validation_samples_df[~validation_samples_df[f"has_part_{target_id}"]]
+
+        pos_samples = df_pos.sample(min(max_pos_samples, len(df_pos)))
+
+        neg_samples = self.get_closest_negatives(df_neg, target_id, n_samples=max_neg_samples)
+        
+        os.makedirs(os.path.join(self.problem_dir, f"chebi_{target_id}"), exist_ok=True)
+        with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
+            for sample in pos_samples.index:
+                f.write(f"pos(chebi_{target_id}({sample})).\n")
+            for sample in neg_samples.index:
+                f.write(f"neg(chebi_{target_id}({sample})).\n")
+
+        return len(df_pos), len(df_neg)

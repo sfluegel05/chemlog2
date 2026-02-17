@@ -7,29 +7,9 @@ from chemlog.ilp_classification.mol2ilp import ILPProblemBuilder, tee_output
 from chemlog.ilp_classification.learn_fgs import FGILPProblemBuilder
 from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subprocess, run_ilp_validation_subprocess
 
-def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100):
-    if not chebi_splits_file:
-        chebi_splits_file = os.path.join("data", "splits_v244.csv")
-    ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set)
-    ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples, predicate_set=predicate_set, rebuild_samples=rebuild_samples)
 
-def learn_chebi_classes(classes_list, learn_fgs=False, timeout=20, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, max_vars=6, max_body=6, max_clauses=2, **kwargs):
-    if not chebi_splits_file:
-        chebi_splits_file = os.path.join("data", "splits_v244.csv")
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    results_dir = os.path.join("ilp", "results", f"run_fgs_{timestamp}" if learn_fgs else f"run_{timestamp}")
-    os.makedirs(results_dir, exist_ok=True)
-    with open(os.path.join(results_dir, "results.json"), "w+") as f:
-        f.write("")  # create empty results file
-
-    log_path = os.path.join(results_dir, "run.log")
-
-    with tee_output(log_path):
-        if learn_fgs:
-            ilp_builder = FGILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, dataset_path=os.path.join("data", "chebi_fgs_dataset.pkl"), predicate_set=predicate_set, max_vars=max_vars, max_body=max_body, max_clauses=max_clauses)
-        else:
-            ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set, max_vars=max_vars, max_body=max_body, max_clauses=max_clauses)
-
+def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_dir, timeout=20, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, **kwargs):
+    
         # Build settings parameters for Popper
         settings_parameters = {
             "noisy": True,
@@ -38,18 +18,7 @@ def learn_chebi_classes(classes_list, learn_fgs=False, timeout=20, chebi_version
         }
         settings_parameters.update(kwargs)
         
-        with open(os.path.join(results_dir, "config.yml"), "w+") as f:
-            f.write(f"chebi_version: {chebi_version}\n")
-            f.write(f"chebi_splits_file: {chebi_splits_file}\n")
-            f.write(f"learn_fgs: {learn_fgs}\n")
-            f.write(f"timeout: {timeout}\n")
-            f.write(f"rebuild_samples: {rebuild_samples}\n")
-            f.write(f"predicate_set: {predicate_set}\n")
-            f.write(f"max_pos_samples: {max_pos_samples}\n")
-            f.write(f"max_neg_samples: {max_neg_samples}\n")
-            f.write(f"max_vars: {max_vars}\n")
-            f.write(f"max_body: {max_body}\n")
-            f.write(f"max_clauses: {max_clauses}\n")
+        with open(os.path.join(results_dir, "config.yml"), "a+") as f:
             f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
             f.write("popper_settings:\n")
             for key, value in settings_parameters.items():
@@ -121,7 +90,33 @@ if __name__ == "__main__":
         args = parser.parse_args()
         with open(args.labels_file, "r") as f:
             classes = [line.strip() for line in f.readlines()]
+
+        if not args.chebi_splits_file:
+            chebi_splits_file = os.path.join("data", "splits_v244.csv")
+        else:
+            chebi_splits_file = args.chebi_splits_file
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        results_dir = os.path.join("ilp", "results", f"run_fgs_{timestamp}" if args.fg_mode else f"run_{timestamp}")
+        os.makedirs(results_dir, exist_ok=True)
+        with open(os.path.join(results_dir, "results.json"), "w+") as f:
+            f.write("")  # create empty results file
+
+        log_path = os.path.join(results_dir, "run.log")
+
+        # write config file with settings used for this run
+        with open(os.path.join(results_dir, "config.yml"), "w+") as f:
+            f.write(f"args:\n")
+            for arg in vars(args):
+                f.write(f"  {arg}: {getattr(args, arg)}\n")
+
+
+        with tee_output(log_path):
+            if args.fg_mode:
+                ilp_builder = FGILPProblemBuilder(chebi_version=args.chebi_version, chebi_split=chebi_splits_file, dataset_path=os.path.join("data", "chebi_fgs_dataset.pkl"), predicate_set=args.predicate_set, max_vars=args.max_vars, max_body=args.max_body, max_clauses=args.max_clauses)
+            else:
+                ilp_builder = ILPProblemBuilder(chebi_version=args.chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=args.predicate_set, max_vars=args.max_vars, max_body=args.max_body, max_clauses=args.max_clauses)
+
         
-        if args.build_validation:
-            build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples)
-        learn_chebi_classes(classes, args.fg_mode, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, timeout=args.timeout, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, max_vars=args.max_vars, max_body=args.max_body, max_clauses=args.max_clauses, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
+            if args.build_validation:
+                ilp_builder.build_validation(classes, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, predicate_set=args.predicate_set, rebuild_samples=args.rebuild_samples)
+            learn_chebi_classes(classes, ilp_builder, results_dir, timeout=args.timeout, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})

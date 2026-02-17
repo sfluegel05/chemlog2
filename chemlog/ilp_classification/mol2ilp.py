@@ -221,7 +221,7 @@ class ILPProblemBuilder:
             validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
             # nx make digraph undirected for distance calculations
             for target_id in tqdm.tqdm(target_ids, desc="Building validation data"):
-                self.gather_validation_samples(target_id, validation_samples_df, self.undirected_graph, max_pos_samples, max_neg_samples)
+                self.gather_validation_samples(target_id, validation_samples_df, max_pos_samples, max_neg_samples)
 
     def get_closest_negatives(self, samples: pd.DataFrame, target_id, n_samples=100):
         # get closest samples in terms of distance in the chebi graph
@@ -285,25 +285,13 @@ class ILPProblemBuilder:
 
         return pd.concat([pos_samples, neg_samples])
 
-    def gather_validation_samples(self, target_id, validation_samples_df, undirected_graph, max_pos_samples=100, max_neg_samples=100) -> tuple[int, int]:
+    def gather_validation_samples(self, target_id, validation_samples_df, max_pos_samples=100, max_neg_samples=100) -> tuple[int, int]:
         import networkx as nx
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
         df_pos = validation_samples_df[[int(id) in descendants for id in validation_samples_df.index]]
         df_neg = validation_samples_df[[id not in df_pos.index for id in validation_samples_df.index]]
         df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)))
-        # instead of sampling, take samples that are closest in the chebi graph (minimum distance between classes)
-        df_neg["dist_to_target"] = df_neg.index.to_series().apply(
-            lambda x: min(nx.shortest_path_length(undirected_graph, int(label), int(target_id)) for label in self.hierarchy_graph.predecessors(int(x)) if int(label) in undirected_graph ))
-        df_neg = df_neg.sort_values(by="dist_to_target")
-        # sample for each distance until we have enough samples or run out of samples
-        neg_samples = []
-        for dist, group in df_neg.groupby("dist_to_target"):
-            if len(neg_samples) >= max_neg_samples:
-                break
-            # shuffle group to get random samples from this distance
-            group = group.sample(frac=1)
-            neg_samples.extend(group.index.tolist())
-        df_neg = df_neg.loc[neg_samples[:max_neg_samples]]
+        df_neg = self.get_closest_negatives(df_neg, target_id, n_samples=max_neg_samples)
 
         os.makedirs(os.path.join(self.problem_dir, f"chebi_{target_id}"), exist_ok=True)
         with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
