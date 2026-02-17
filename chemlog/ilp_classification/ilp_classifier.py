@@ -9,6 +9,7 @@ import pickle
 import base64
 from datetime import datetime
 import time
+import re
 from janus_swi import consult, query_once
 from bitarray.util import ones
 
@@ -173,127 +174,79 @@ print(json.dumps(result))
     return output
 
 
-def run_ilp_validation_subprocess(chebi_id, prog, exs_file, bk_file, bias_file, settings_parameters, log_dir=None):
-    """Run Popper validation in a separate subprocess for isolated Prolog session."""
-    # Serialize prog object using pickle and base64 encode
+def format_literal(literal_str):
+    predicate = literal_str.split('(')[0].strip()
+    args_str = literal_str.split('(')[1].rstrip(')').strip()
+    args = [f"_{arg}" for arg in args_str.split(',')]
+    return f"{predicate}({', '.join(args)})"
 
-    with open(exs_file, "r") as f:
-        exs_content = f.read()
-        # count pos and neg examples
-        n_validation_pos = exs_content.count("pos(")
-        n_validation_neg = exs_content.count("neg(")
+def run_ilp_validation(chebi_id, rule, exs_file, bk_file):
+    # exs_file contains a list of pos(chebi_{chebi_id}(sample_id)) and neg(chebi_{chebi_id}(sample_id))
+    # bk_file contains the same background knowledge used for training (e.g. has_atom(sample_id, atom))
+    # rule has format "chebi_{chebi_id}(V0) :- body_literal1(V0, V1), body_literal2(V1), ..."   
+    consult(bk_file)
+    consult(exs_file)
+    test_pl_path = os.path.join("data", "test.pl")
+    consult(test_pl_path)
+    query_once('load_examples')
 
+    n_pos = query_once(f"findall(_ID, (pos_index(_ID, chebi_{chebi_id}(_V0))), S), length(S, N).")["N"]
+    n_neg = query_once(f"findall(_ID, (neg_index(_ID, chebi_{chebi_id}(_V0))), S), length(S, N).")["N"]
+
+    pos_covered, neg_covered = set(), set()
+    # Assert each clause separately to avoid Prolog syntax errors on multi-line rules.
+    clauses = [c.strip() for c in rule.replace("\r", "").split(".") if c.strip()]
+    for clause in clauses:
+        head, body = clause.split(":-")
+        body = ",".join([format_literal(b.strip()) for b in body.split(",")])
+        pos = query_once(f"findall(_ID, (pos_index(_ID, chebi_{chebi_id}(_V0)), {body}), S).")["S"]
+        pos_covered.update(pos)
+        neg = query_once(f"findall(_ID, (neg_index(_ID, chebi_{chebi_id}(_V0)), {body}), S).")["S"]
+        neg_covered.update(neg)
+
+    tps = len(pos_covered)
+    fps = len(neg_covered)
+    fns = n_pos - tps
+    tns = n_neg - fps
+    return {
+        "TP": tps,
+        "FP": fps,
+        "TN": tns,
+        "FN": fns,
+    }
+
+def run_ilp_validation_subprocess(chebi_id, rule, exs_file, bk_file, log_dir=None):
+    """Run ILP validation in a separate subprocess to isolate Prolog session."""
     script = f'''
+
 import json
-import pickle
-import base64
-from popper.tester import Tester
-from popper.util import Settings
+from janus_swi import consult, query_once
+from chemlog.ilp_classification.ilp_classifier import run_ilp_validation
+res = run_ilp_validation("{chebi_id}", """{rule}""", r"{exs_file}", r"{bk_file}")
 
-def make_pickleable(prog):
-    if hasattr(prog, 'items') or hasattr(prog, 'keys'):
-        return dict(prog)
-    if type(prog).__name__ == 'dict_values':
-        return list(prog)
-    return prog
-
-with open(os.path.join(log_dir, "learned_program.pkl"), "rb") as f:
-        prog = pickle.load(f)
-
-print(f"Deserialized prog", prog)
-print(bk_file, exs_file, bias_file)
-settings = Settings(bk_file=r"{bk_file}", ex_file=r"{exs_file}", bias_file=r"{bias_file}", **{repr(settings_parameters)})
-settings.datalog = False
-
-if prog:
-    ilp_tester = Tester(settings)
-    print(bk_file, exs_file)
-    pos_covered, neg_covered = ilp_tester.test_prog_all(prog)
-    print(pos_covered, neg_covered)
-    tp = pos_covered.count(1)
-    fn = {n_validation_pos} - tp
-    fp = neg_covered.count(1)
-    tn = {n_validation_neg} - fp
-else:
-    tp, fn, fp, tn = 0, {n_validation_pos}, 0, {n_validation_neg}
-
-result = {{"TP": tp, "FN": fn, "TN": tn, "FP": fp}}
-print(json.dumps(result))
+print(json.dumps(res))
 '''
-    # Get timeout from settings_parameters (default 60 seconds for validation)
-    timeout = settings_parameters.get("timeout", 60)
-    
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            cwd=os.getcwd(),
-            timeout=timeout
-        )
-    except subprocess.TimeoutExpired:
-        if log_dir:
-            log_subprocess_output(log_dir, f"Validation: chebi_{chebi_id}", f"Validation timed out after {timeout} seconds")
-        print(f"    Validation timed out after {timeout} seconds")
-        return {"TP": 0, "FN": n_validation_pos, "TN": n_validation_neg, "FP": 0, "timeout": True}
-    
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        start_new_session=True,  # Start in a new session to isolate from parent process
+        cwd=os.getcwd(),
+    )
     if log_dir:
-        log_subprocess_output(log_dir, f"Validation: chebi_{chebi_id}", result)
-    try:
-        stdout_lines = result.stdout.strip().split('\n')
-        conf_matrix = json.loads(stdout_lines[-1])
-    except json.decoder.JSONDecodeError:
-        conf_matrix = {"TP": 0, "FN": n_validation_pos, "TN": n_validation_neg, "FP": 0}
-        if log_dir:
-            log_subprocess_output(log_dir, f"Validation: chebi_{chebi_id}", f"Failed to parse JSON output. Raw stdout:\n{result.stdout}")
-        print(f"    Failed to parse JSON output. See logs for details.")
-        return conf_matrix
+        log_subprocess_output(log_dir, f"Validation: {chebi_id}", result)
     # Parse only the last line (JSON output), ignore earlier lines (warnings/progress)
-    print(f"    Validation set: TP: {conf_matrix['TP']}, FN: {conf_matrix['FN']}, TN: {conf_matrix['TN']}, FP: {conf_matrix['FP']}")
-    return conf_matrix
+    stdout_lines = result.stdout.strip().split('\n')
+    try:
+        output = json.loads(stdout_lines[-1])
+    except json.decoder.JSONDecodeError:
+        output = {"error": "Failed to parse JSON output"}
+    return output
 
 
 if __name__ == "__main__":
-    # Example usage
-    log_dir = os.path.join("ilp", "results", "run_20260216_095350")
-    exs_file = "ilp/chebi_v244/chebi_23824/exs_validation.pl"
-    bk_file = "ilp/chebi_v244/atoms/bk_validation.pl"
-    bias_file = "ilp/chebi_v244/chebi_23824/atoms/bias_max_vars=6_max_body=6.pl"
-    n_validation_pos = 100
-    n_validation_neg = 100
-    settings_parameters = {"timeout": 60}
-    import json
-    import pickle
-    import base64
-    from popper.tester import Tester
-    from popper.util import Settings
-
-    def make_pickleable(prog):
-        if hasattr(prog, 'items') or hasattr(prog, 'keys'):
-            return dict(prog)
-        if type(prog).__name__ == 'dict_values':
-            return list(prog)
-        return prog
-
-    with open(os.path.join(log_dir, "learned_program.pkl"), "rb") as f:
-        prog = pickle.load(f)
-
-    print(f"Deserialized prog", prog)
-    print(bk_file, exs_file, bias_file)
-    settings = Settings(bk_file=f"{bk_file}", ex_file=f"{exs_file}", bias_file=f"{bias_file}", **settings_parameters)
-    settings.datalog = False
-
-    if prog:
-        ilp_tester = Tester(settings)
-        print(bk_file, exs_file)
-        pos_covered, neg_covered = ilp_tester.test_prog_all(prog)
-        print(pos_covered, neg_covered)
-        tp = pos_covered.count(1)
-        fn = n_validation_pos - tp
-        fp = neg_covered.count(1)
-        tn = n_validation_neg - fp
-    else:
-        tp, fn, fp, tn = 0, n_validation_pos, 0, n_validation_neg
-
-    result = {{"TP": tp, "FN": fn, "TN": tn, "FP": fp}}
-    print(json.dumps(result))
+    chebi_id = "23824"
+    rule = "chebi_23824(V0):- ethene(V0).\nchebi_23824(V0):- gte_10_carbon_sb_chain(V0)."
+    exs_file = os.path.join("ilp", "chebi_v244", f"chebi_{chebi_id}", "exs.pl")
+    bk_file = os.path.join("ilp", "chebi_v244", f"chebi_{chebi_id}", "chembl_fgs", "bk.pl")
+    run_ilp_validation(chebi_id, rule, exs_file, bk_file)

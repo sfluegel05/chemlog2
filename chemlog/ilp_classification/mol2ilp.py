@@ -61,13 +61,11 @@ def tee_output(log_path):
 
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs"] = "atoms", max_vars=6, max_body=6, max_clauses=2):
+    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs"] = "atoms", max_vars=6, max_body=6, max_clauses=2, **kwargs):
         self.chembl_fgs = predicate_set == "chembl_fgs"
         self.predicate_set = predicate_set
         self.chebi_version = chebi_version
-        if not problem_dir:
-            problem_dir = os.path.join("ilp", (f"chebi_v{chebi_version}"))
-        self.problem_dir = problem_dir
+        self._problem_dir = problem_dir
         os.makedirs(self.problem_dir, exist_ok=True)
         self.muggleton = muggleton
         self.max_vars = max_vars
@@ -80,7 +78,7 @@ class ILPProblemBuilder:
         self.hierarchy_graph = self.chebi_data.get_trans_hierarchy()
         nontrans_hierarchy = self.chebi_data.build_hierarchy_graph()
         self.undirected_graph = nontrans_hierarchy.to_undirected()
-        self.samples_df = self.chebi_data.processed[self.chebi_data.processed["subset"] == "3_STAR"]
+        self.samples_df = self.load_samples(kwargs["dataset_path"] if "dataset_path" in kwargs else None)
 
         # load splits from csv file
         with open(chebi_split, "r") as f:
@@ -100,7 +98,14 @@ class ILPProblemBuilder:
                 self.test_ids.add(chebi_id)
             else:
                 raise ValueError(f"Unknown split '{split}' for ChEBI ID {chebi_id}")
+                    
+    @property
+    def problem_dir(self):
+        return self._problem_dir if self._problem_dir else os.path.join("ilp", f"chebi_v{self.chebi_version}")
             
+    def load_samples(self, dataset_path):
+        return self.chebi_data.processed[self.chebi_data.processed["subset"] == "3_STAR"]
+
     def build_train_bk(self):
         # big BK (for all training samples) -> not very efficient
         bk_dir = os.path.join(self.problem_dir, self.predicate_set)
@@ -333,7 +338,7 @@ def build_background_chemlog(rows):
             # replace cip_code_s and cip_code_r with cip_code_S and cip_code_R
             if predicate.startswith("cip_code_"):
                 predicate = "cip_code_" + predicate[-1].upper()
-            if predicate == "EQ" or predicate == "atom":
+            if predicate == "EQ" or predicate == "atom" or predicate == "*":
                 continue  # skip equality predicate (implicit in Prolog)
             if predicate not in lines_by_predicate:
                 lines_by_predicate[predicate] = []
@@ -408,128 +413,3 @@ def mol_to_prolog_muggleton(mol, molecule_id="mol1"):
         )  # undirected 
 
     return prolog_atoms, prolog_bonds
-
-
-def build_validation_data(labels_list, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100):
-    if not chebi_splits_file:
-        chebi_splits_file = os.path.join("data", "splits_v244.csv")
-    ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set)
-    ilp_builder.build_validation(labels_list, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples, predicate_set=predicate_set, rebuild_samples=rebuild_samples)
-
-def learn_chebi_classes(classes_list, timeout=20, chebi_version=244, chebi_splits_file=None, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, max_vars=6, max_body=6, max_clauses=2, **kwargs):
-    if not chebi_splits_file:
-        chebi_splits_file = os.path.join("data", "splits_v244.csv")
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    results_dir = os.path.join("ilp", "results", f"run_{timestamp}")
-    os.makedirs(results_dir, exist_ok=True)
-    with open(os.path.join(results_dir, "results.json"), "w+") as f:
-        f.write("")  # create empty results file
-
-    log_path = os.path.join(results_dir, "run.log")
-
-    with tee_output(log_path):
-        ilp_builder = ILPProblemBuilder(chebi_version=chebi_version, chebi_split=chebi_splits_file, muggleton=False, predicate_set=predicate_set, max_vars=max_vars, max_body=max_body, max_clauses=max_clauses)
-
-        # Build settings parameters for Popper
-        settings_parameters = {
-            "noisy": True,
-            "anytime_solver": "nuwls",
-            "timeout": timeout,
-        }
-        settings_parameters.update(kwargs)
-        
-        with open(os.path.join(results_dir, "config.yml"), "w+") as f:
-            f.write(f"chebi_version: {chebi_version}\n")
-            f.write(f"chebi_splits_file: {chebi_splits_file}\n")
-            f.write(f"timeout: {timeout}\n")
-            f.write(f"rebuild_samples: {rebuild_samples}\n")
-            f.write(f"predicate_set: {predicate_set}\n")
-            f.write(f"max_pos_samples: {max_pos_samples}\n")
-            f.write(f"max_neg_samples: {max_neg_samples}\n")
-            f.write(f"max_vars: {max_vars}\n")
-            f.write(f"max_body: {max_body}\n")
-            f.write(f"max_clauses: {max_clauses}\n")
-            f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
-            f.write("popper_settings:\n")
-            for key, value in settings_parameters.items():
-                f.write(f"\t{key}: {value}\n")
-
-        wrapper = PopperWrapper(settings_parameters)
-
-        #if rebuild_samples:
-            #bk_dir = ilp_builder.build_train_bk()
-        #else:
-            #bk_dir = os.path.join(ilp_builder.problem_dir, predicate_set)
-        for chebi_id in classes_list:
-            start_time = time.perf_counter()
-            #try: 
-            exs_path, bias_path = ilp_builder.build_ilp_problem(chebi_id, rebuild_samples=rebuild_samples, max_pos_samples=max_pos_samples, max_neg_samples=max_neg_samples)
-            bk_dir = os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", predicate_set)
-            
-            # Run training in subprocess (isolated Prolog session)
-            #train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
-            print(f"Training ChEBI:{chebi_id}")
-            train_result = run_ilp_training_subprocess(exs_path, os.path.join(bk_dir, "bk.pl"), bias_path, settings_parameters, log_dir=results_dir)
-            prog_str = train_result["prog_str"]  # string representation for display/storage
-            score = train_result["score"]
-            
-            print(f"ChEBI:{chebi_id} - Score: {score}")
-            print(f"    Learned program:\n{prog_str}")
-            
-            validate = False # todo restructure validation
-            if validate:
-                # Run validation in subprocess (isolated Prolog session)
-                print(f"Validating ChEBI:{chebi_id}...")
-                print(f"    Validation exs file: {os.path.join(ilp_builder.problem_dir, f'chebi_{chebi_id}', 'exs_validation.pl')}")
-                print(f"    Validation bk file: {os.path.join(ilp_builder.problem_dir, predicate_set, 'bk_validation.pl')}")
-                print(f"    Validation bias file: {bias_path}")
-                conf_matrix = run_ilp_validation_subprocess(
-                    chebi_id, prog_str,
-                    exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_validation.pl"),
-                    bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_validation.pl"),
-                    bias_file=bias_path,
-                    settings_parameters=settings_parameters,
-                    log_dir=results_dir
-                )
-                #except Exception as e:
-                #    print(f"Error processing ChEBI:{chebi_id} - {e}")
-                #    prog_str = None
-                #    score = None
-                #    conf_matrix = None
-            
-            with open(os.path.join(results_dir, "results.json"), "a+") as f:
-                result_entry = {
-                    "chebi_id": chebi_id,
-                    "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
-                    "time_taken": time.perf_counter() - start_time,
-                    "program": prog_str,
-                    "validation_score": conf_matrix if validate else None,
-                }
-                f.write(json.dumps(result_entry) + "\n")
-
-
-if __name__ == "__main__":
-    # use command line arguments as kwargs for eval_chebi_classes
-        import argparse
-        parser = argparse.ArgumentParser(description="Evaluate ILP classification on ChEBI classes using Popper.")
-        parser.add_argument("--labels_file", type=str, default=None, help="Path to the labels file.")
-        parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
-        parser.add_argument("--chebi_splits_file", type=str, default=None, help="Path to the ChEBI splits CSV file.")
-        parser.add_argument("--timeout", type=int, default=20, help="Timeout for ILP solver in seconds.")
-        parser.add_argument("--max_vars", type=int, default=6, help="Maximum number of variables in learned rules.")
-        parser.add_argument("--max_body", type=int, default=6, help="Maximum number of body literals in learned rules.")
-        parser.add_argument("--max_clauses", type=int, default=2, help="Maximum number of clauses in the learned program.")
-        parser.add_argument("--max_pos_samples", type=int, default=100, help="Maximum number of positive samples per class.")
-        parser.add_argument("--max_neg_samples", type=int, default=100, help="Maximum number of negative samples per class.")
-        parser.add_argument("--rebuild_samples", action="store_true", help="Whether to rebuild train bk.pl and exs.pl even if they already exist.")
-        parser.add_argument("--build_validation", action="store_true", help="Whether to build validation data (bk_validation.pl and exs_validation.pl).")
-        parser.add_argument("--predicate_set", type=str, default="atoms", choices=["atoms", "chembl_fgs"], help="Whether to include CHEMBL FG predicates in the background knowledge.")
-        # arbitrary additional arguments (optional)
-        parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")
-        args = parser.parse_args()
-        with open(args.labels_file, "r") as f:
-            classes = [line.strip() for line in f.readlines()]
-        
-        if args.build_validation:
-            build_validation_data(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples)
-        learn_chebi_classes(classes, chebi_version=args.chebi_version, chebi_splits_file=args.chebi_splits_file, rebuild_samples=args.rebuild_samples, predicate_set=args.predicate_set, timeout=args.timeout, max_pos_samples=args.max_pos_samples, max_neg_samples=args.max_neg_samples, max_vars=args.max_vars, max_body=args.max_body, max_clauses=args.max_clauses, **{k: v for k, v in (arg.split("=") for arg in args.popper_kwargs)})
