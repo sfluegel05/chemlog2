@@ -277,8 +277,8 @@ print(json.dumps(res))
 
 
 if __name__ == "__main__":
-    chebi_id = "23824"
-    rule = "chebi_23824(V0):- ethene(V0).\nchebi_23824(V0):- gte_10_carbon_sb_chain(V0)."
-    exs_file = os.path.join("ilp", "chebi_v244", f"chebi_{chebi_id}", "exs.pl")
-    bk_file = os.path.join("ilp", "chebi_v244", f"chebi_{chebi_id}", "chembl_fgs", "bk.pl")
+    chebi_id = "47909"
+    rule = "chebi_47909(V0):- has_atom(V0,V1),h(V4),bSINGLE(V2,V4),h(V3),has_bond_to(V1,V2),has_bond_to(V1,V3)."
+    exs_file = os.path.join("ilp", "chebi_v244", f"chebi_{chebi_id}", "exs_test.pl")
+    bk_file = os.path.join("ilp", "chebi_v244", "atoms", "bk_test.pl")
     run_ilp_validation(chebi_id, rule, exs_file, bk_file)

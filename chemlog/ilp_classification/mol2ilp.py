@@ -13,6 +13,7 @@ from chemlog.preprocessing.chebi_data import ChEBIData
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 import pandas as pd
 import time
+from chemlog.ilp_classification.ilp_path_manager import get_bk_path, get_bias_path, get_exs_path
 
 
 @contextmanager
@@ -136,7 +137,7 @@ class ILPProblemBuilder:
         print(f"ILP train bk saved to {bk_dir}")
         return bk_dir
         
-    def build_ilp_problem(self, target_id, rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
+    def build_ilp_problem(self, target_id, rebuild_samples=False, max_pos_samples=100, max_neg_samples=100, selection_mode: Literal["claude", "random", "top_k"]|None=None):
         """
         Build an ILP problem for classifying molecules based on their membership in a ChEBI class.
 
@@ -145,21 +146,19 @@ class ILPProblemBuilder:
             rebuild_samples (bool): If False, reuse existing samples if they exist. If True, regenerate bk.pl and exs.pl even if they already exist.
             max_pos_samples (int): Maximum number of positive samples to include.
             max_neg_samples (int): Maximum number of negative samples to include.
-        """
-        target_dir = os.path.join(self.problem_dir, f"chebi_{target_id}")
-        bk_dir = os.path.join(target_dir, self.predicate_set)
-        os.makedirs(target_dir, exist_ok=True)
-        os.makedirs(bk_dir, exist_ok=True)
-
-        bk_path = os.path.join(bk_dir, "bk.pl")
-        exs_path = os.path.join(target_dir, "exs.pl")
-        bias_path = os.path.join(bk_dir, f"bias_max_vars={self.max_vars}_max_body={self.max_body}.pl")
+            selection_mode (Literal["claude", "random", "top_k"]|None):
+            """
+        
+        bk_path = get_bk_path(target_id, base_dir=self.problem_dir, predicate_set=self.predicate_set)
+        exs_path = get_exs_path(target_id, base_dir=self.problem_dir)
+        bias_path = get_bias_path(target_id, base_dir=self.problem_dir, predicate_set=self.predicate_set, max_vars=self.max_vars, max_body=self.max_body, max_clauses=self.max_clauses, selection_mode=selection_mode)
+        plain_bias_path = get_bias_path(target_id, base_dir=self.problem_dir, predicate_set=self.predicate_set, selection_mode=selection_mode)
 
         selected_rows = None
         if rebuild_samples or not os.path.exists(exs_path):
             selected_rows = self.gather_samples_for_chebi_cls(target_id, max_pos_samples, max_neg_samples)
         
-        if not (os.path.exists(bk_path) and os.path.exists(bias_path) and selected_rows is None):
+        if not (os.path.exists(bk_path) and os.path.exists(plain_bias_path) and selected_rows is None):
             if selected_rows is None:
                 with open(exs_path, "r") as f:
                     # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
@@ -185,18 +184,20 @@ class ILPProblemBuilder:
                 f"head_pred(chebi_{target_id}, 1)."] + [
                 f"body_pred({pred},{arity})." for pred, arity in body_predicates
             ]
-            with open(os.path.join(bk_dir, "bias.pl"), "w+") as f:
+            # bias without settings (as template)
+            with open(plain_bias_path, "w+") as f:
                 f.write("\n".join(bias_lines) + "\n")
             
-            print(f"ILP problem for ChEBI:{target_id} saved to {target_dir}")
+            print(f"ILP problem for ChEBI:{target_id} saved to exs: {exs_path}, bk: {bk_path}, bias: {plain_bias_path}")
     
 
         # use bias.pl to generate settings-specific bias file
-        with open(os.path.join(bk_dir, "bias.pl"), "r") as f:
+        with open(plain_bias_path, "r") as f:
             bias_content = f.read()
         bias_content = bias_content.replace("%% max_vars(TODO).", f"max_vars({self.max_vars}).")
         bias_content = bias_content.replace("%% max_body(TODO).", f"max_body({self.max_body}).")
         bias_content = bias_content.replace("%% max_clauses(TODO).", f"max_clauses({self.max_clauses}).") 
+                
         with open(bias_path, "w+") as f:
             f.write(bias_content)
 
@@ -204,9 +205,12 @@ class ILPProblemBuilder:
 
         return exs_path, bias_path
 
-    def build_validation(self, target_ids, predicate_set: Literal["atoms", "chembl_fgs"], rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
+    def build_validation(self, target_ids, predicate_set: Literal["atoms", "chembl_fgs"], split: Literal["validation", "test"]="validation", rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
         # validation bk knowledge
-        validation_rows = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
+        if split == "validation":
+            validation_rows = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
+        elif split == "test":
+            validation_rows = self.samples_df[[str(id) in self.test_ids for id in self.samples_df.index]]
         prolog_lines, body_predicates = build_background_muggleton(validation_rows) if self.muggleton else build_background_chemlog(validation_rows)
         if self.chembl_fgs:
             prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, validation_rows)
@@ -214,14 +218,15 @@ class ILPProblemBuilder:
             body_predicates += body_predicates_fgs
 
         os.makedirs(os.path.join(self.problem_dir, predicate_set), exist_ok=True)
-        with open(os.path.join(self.problem_dir, predicate_set, "bk_validation.pl"), "w+") as f:
+        bk_path = get_bk_path(None, base_dir=self.problem_dir, predicate_set=predicate_set, split=split)
+        with open(bk_path, "w+") as f:
             f.write("\n".join(prolog_lines) + "\n")
 
-        if rebuild_samples:
-            validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
-            # nx make digraph undirected for distance calculations
-            for target_id in tqdm.tqdm(target_ids, desc="Building validation data"):
-                self.gather_validation_samples(target_id, validation_samples_df, max_pos_samples, max_neg_samples)
+        validation_samples_df = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
+        for target_id in tqdm.tqdm(target_ids, desc=f"Building {split} data"):
+            exs_path = get_exs_path(target_id, base_dir=self.problem_dir, split=split)
+            if not os.path.exists(exs_path) or rebuild_samples:
+                self.gather_validation_samples(target_id, validation_samples_df, max_pos_samples, max_neg_samples, split=split)
 
     def get_closest_negatives(self, samples: pd.DataFrame, target_id, n_samples=100):
         # get closest samples in terms of distance in the chebi graph
@@ -232,8 +237,6 @@ class ILPProblemBuilder:
         q.put(int(target_id))
         visited = set() # visit closest labels
         selected = set() # select samples that are subclasses of closest labels until we have enough samples
-        with open(os.path.join(self.problem_dir, "samples_idx.txt"), "w+") as f:
-             f.write("\n".join(str(id) for id in samples.index))
         samples_index = list(str(id) for id in samples.index)
         while not q.empty() and len(selected) < n_samples:
             current = q.get()
@@ -279,7 +282,8 @@ class ILPProblemBuilder:
         #    neg_samples.extend(group.index.tolist())
         neg_samples = self.get_closest_negatives(df_neg, target_id, n_samples=max_neg_samples)
         
-        with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs.pl"), "w+") as f:
+        exs_path = get_exs_path(target_id, base_dir=self.problem_dir)
+        with open(exs_path, "w+") as f:
             for sample in pos_samples.index:
                 f.write(f"pos(chebi_{target_id}({sample})).\n")
             for sample in neg_samples.index:
@@ -289,7 +293,7 @@ class ILPProblemBuilder:
 
         return pd.concat([pos_samples, neg_samples])
 
-    def gather_validation_samples(self, target_id, validation_samples_df, max_pos_samples=100, max_neg_samples=100) -> tuple[int, int]:
+    def gather_validation_samples(self, target_id, validation_samples_df, max_pos_samples=100, max_neg_samples=100, split: Literal["validation", "test"]="validation") -> tuple[int, int]:
         import networkx as nx
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
         df_pos = validation_samples_df[[int(id) in descendants for id in validation_samples_df.index]]
@@ -297,8 +301,8 @@ class ILPProblemBuilder:
         df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)))
         df_neg = self.get_closest_negatives(df_neg, target_id, n_samples=max_neg_samples)
 
-        os.makedirs(os.path.join(self.problem_dir, f"chebi_{target_id}"), exist_ok=True)
-        with open(os.path.join(self.problem_dir, f"chebi_{target_id}", "exs_validation.pl"), "w+") as f:
+        exs_path = get_exs_path(target_id, base_dir=self.problem_dir, split=split)
+        with open(exs_path, "w+") as f:
             for mol_id in df_pos.index:
                 f.write(f"pos(chebi_{target_id}({mol_id})).\n")
             for mol_id in df_neg.index:
