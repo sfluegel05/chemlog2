@@ -42,12 +42,16 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             conf_matrix = None
             # Run validation in subprocess (isolated Prolog session)
             print(f"Validating ChEBI:{chebi_id}...")
-            conf_matrix = run_ilp_validation_subprocess(
-                chebi_id, prog_str,
-                exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_validation.pl"),
-                bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_validation.pl"),
-                log_dir=results_dir
-                )
+            try:
+                conf_matrix = run_ilp_validation_subprocess(
+                    chebi_id, prog_str,
+                    exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_validation.pl"),
+                    bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_validation.pl"),
+                    log_dir=results_dir
+                    )
+            except Exception as e:
+                print(f"Validation failed for ChEBI:{chebi_id} with error: {e}")
+                conf_matrix = None
             
             with open(os.path.join(results_dir, "results.json"), "a+") as f:
                 result_entry = {
