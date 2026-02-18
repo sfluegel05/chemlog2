@@ -246,7 +246,7 @@ def run_ilp_validation(chebi_id, rule, exs_file, bk_file):
         "FN": fns,
     }
 
-def run_ilp_validation_subprocess(chebi_id, rule, exs_file, bk_file, log_dir=None):
+def run_ilp_validation_subprocess(chebi_id, rule, exs_file, bk_file, log_dir=None, timeout=300):
     """Run ILP validation in a separate subprocess to isolate Prolog session."""
     script = f'''
 
@@ -263,6 +263,7 @@ print(json.dumps(res))
         text=True,
         start_new_session=True,  # Start in a new session to isolate from parent process
         cwd=os.getcwd(),
+        timeout=timeout,
     )
     if log_dir:
         log_subprocess_output(log_dir, f"Validation: {chebi_id}", result)
