@@ -174,7 +174,35 @@ print(json.dumps(result))
     return output
 
 
+def split_prolog_literals(body):
+    """Split Prolog body into literals by comma, respecting parentheses depth."""
+    literals = []
+    current = []
+    depth = 0
+    
+    for char in body:
+        if char == '(':
+            depth += 1
+            current.append(char)
+        elif char == ')':
+            depth -= 1
+            current.append(char)
+        elif char == ',' and depth == 0:
+            # Comma at depth 0 - this is a literal separator
+            literals.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    
+    # Don't forget the last literal
+    if current:
+        literals.append(''.join(current).strip())
+    
+    return literals
+
+
 def format_literal(literal_str):
+    print(f"Formatting literal: {literal_str}")
     predicate = literal_str.split('(')[0].strip()
     args_str = literal_str.split('(')[1].rstrip(')').strip()
     args = [f"_{arg}" for arg in args_str.split(',')]
@@ -196,9 +224,12 @@ def run_ilp_validation(chebi_id, rule, exs_file, bk_file):
     pos_covered, neg_covered = set(), set()
     # Assert each clause separately to avoid Prolog syntax errors on multi-line rules.
     clauses = [c.strip() for c in rule.replace("\r", "").split(".") if c.strip()]
+    print(clauses)
     for clause in clauses:
         head, body = clause.split(":-")
-        body = ",".join([format_literal(b.strip()) for b in body.split(",")])
+        print(body)
+        # split pred1(V0, V1), pred2(V1) into separate literals and format each with format_literal
+        body = ",".join([format_literal(b) for b in split_prolog_literals(body)])
         pos = query_once(f"findall(_ID, (pos_index(_ID, chebi_{chebi_id}(_V0)), {body}), S).")["S"]
         pos_covered.update(pos)
         neg = query_once(f"findall(_ID, (neg_index(_ID, chebi_{chebi_id}(_V0)), {body}), S).")["S"]
