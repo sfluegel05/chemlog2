@@ -230,19 +230,23 @@ class ILPProblemBuilder:
         import queue 
         q = queue.Queue()
         q.put(int(target_id))
-        visited = set()
-        selected = set()
+        visited = set() # visit closest labels
+        selected = set() # select samples that are subclasses of closest labels until we have enough samples
         with open(os.path.join(self.problem_dir, "samples_idx.txt"), "w+") as f:
              f.write("\n".join(str(id) for id in samples.index))
         samples_index = list(str(id) for id in samples.index)
         while not q.empty() and len(selected) < n_samples:
             current = q.get()
-            if str(current) in samples_index:
-                selected.add(str(current))
             for neighbor in self.undirected_graph.neighbors(current):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     q.put(neighbor)
+                    for neighbor_sub in self.hierarchy_graph.successors(neighbor):
+                        if str(neighbor_sub) in samples_index:
+                            selected.add(str(neighbor_sub))
+                        if len(selected) >= n_samples:
+                            return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
+
         return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
 
 
