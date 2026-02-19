@@ -52,6 +52,10 @@ class ChEBIData:
     @property
     def chembl_fgs_path(self):
         return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "chembl_fgs.pkl")
+    
+    @property
+    def chebi_fgs_path(self):
+        return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "chebi_fgs.pkl")
 
     def download_chebi(self) -> None:
         if not os.path.exists(self.chebi_path):
@@ -173,7 +177,28 @@ class ChEBIData:
         else:
             with open(self.chembl_fgs_path, "rb") as f:
                 return pickle.load(f)
-
+            
+    def get_chebi_fgs(self):
+        smarts_path = os.path.join("data", "chebi_fg_smarts.csv")
+        if not os.path.exists(self.chebi_fgs_path):
+            if not os.path.exists(smarts_path):
+                raise ValueError(f"SMARTS patterns for ChEBI functional groups not found at {smarts_path}. Please create this file with group_id and smarts columns.")
+            smarts_df = pd.read_csv(smarts_path)
+            fg_matches_by_mol = dict()
+            print(f"Calculating FG matches for {len(self.processed)} molecules using ChEBI functional groups with {len(smarts_df)} SMARTS patterns")
+            for row in tqdm.tqdm(self.processed.itertuples(), desc="Calculating FG matches", total=len(self.processed)):
+                fg_matches_by_mol[row.Index] = []
+                mol = row.mol
+                for _, smarts_row in smarts_df.iterrows():
+                    fg_name = f"chebi_fg_{smarts_row['group_id']}"
+                    if mol.HasSubstructMatch(Chem.MolFromSmarts(smarts_row["smarts"])):
+                        fg_matches_by_mol[row.Index].append(fg_name)
+            with open(self.chebi_fgs_path, "wb") as f:
+                pickle.dump((fg_matches_by_mol), f)
+            return fg_matches_by_mol
+        else:
+            with open(self.chebi_fgs_path, "rb") as f:
+                return pickle.load(f)
 
 
 def chebi_to_int(s):
