@@ -60,10 +60,20 @@ def tee_output(log_path):
         log_file.close()
 
 
+CHEBI_FG_RULES_PATH = os.path.join("data", "chebi_fg_rules_from_smiles.pl")
+
+
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs"] = "atoms", max_vars=6, max_body=6, max_clauses=2, **kwargs):
+    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, **kwargs):
+        # chembl_fgs: ChEMBL FGs supplied as samples
+        # chebi_fgs: ChEBI FGs supplied as samples
+        # chebi_fg_rules: ChEBI FGs supplied as Prolog rules (extracted from ChEBI SMILES) - currently broken
+        # chebi_fgs_learned_rules #todo ChEBI FGs supplied as rules, learned with ILP from chebi_fgs
         self.chembl_fgs = predicate_set == "chembl_fgs"
+        self.chebi_fg_rules = predicate_set == "chebi_fg_rules"
+        self.chebi_fgs = predicate_set == "chebi_fgs"
+        
         self.predicate_set = predicate_set
         self.chebi_version = chebi_version
         self._problem_dir = problem_dir
@@ -106,36 +116,6 @@ class ILPProblemBuilder:
             
     def load_samples(self, dataset_path):
         return self.chebi_data.processed[self.chebi_data.processed["subset"] == "3_STAR"]
-
-    def build_train_bk(self):
-        # big BK (for all training samples) -> not very efficient
-        bk_dir = os.path.join(self.problem_dir, self.predicate_set)
-        os.makedirs(bk_dir, exist_ok=True)
-        train_rows = self.samples_df[[str(id) in self.train_ids for id in self.samples_df.index]]
-
-        prolog_lines, body_predicates = build_background_muggleton(train_rows) if self.muggleton else build_background_chemlog(train_rows)
-        if self.chembl_fgs:
-            prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, train_rows)
-            prolog_lines += prolog_lines_fgs
-            body_predicates += body_predicates_fgs
-
-        with open(os.path.join(bk_dir, "bk.pl"), "w+") as f:
-            f.write("\n".join(prolog_lines) + "\n")
-        # build bias file
-        bias_lines = [
-            f"%% (bias file without settings)",
-            f"",
-            f"%% max_vars(TODO).",
-            f"%% max_body(TODO).",
-            f"",
-            f"head_pred(chebi_UNKNOWN, 1)."] + [
-            f"body_pred({pred},{arity})." for pred, arity in body_predicates
-        ]
-        with open(os.path.join(bk_dir, "bias.pl"), "w+") as f:
-            f.write("\n".join(bias_lines) + "\n")
-        
-        print(f"ILP train bk saved to {bk_dir}")
-        return bk_dir
         
     def build_ilp_problem(self, target_id, rebuild_samples=False, max_pos_samples=100, max_neg_samples=100, selection_mode: Literal["claude", "random", "top_k"]|None=None):
         """
@@ -166,8 +146,12 @@ class ILPProblemBuilder:
                     selected_rows = self.samples_df[[str(id) in selected_ids for id in self.samples_df.index]]
 
             prolog_lines, body_predicates = build_background_muggleton(selected_rows) if self.muggleton else build_background_chemlog(selected_rows)
-            if self.chembl_fgs:
-                prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, selected_rows)
+            if self.predicate_set in ["chembl_fgs", "chebi_fgs"]:
+                prolog_lines_fgs, body_predicates_fgs = build_background_fg_data(self.chebi_data, selected_rows, source=self.predicate_set)
+                prolog_lines += prolog_lines_fgs
+                body_predicates += body_predicates_fgs
+            if self.chebi_fg_rules:
+                prolog_lines_fgs, body_predicates_fgs = build_background_chebi_fg_rules()
                 prolog_lines += prolog_lines_fgs
                 body_predicates += body_predicates_fgs
 
@@ -205,15 +189,19 @@ class ILPProblemBuilder:
 
         return exs_path, bias_path
 
-    def build_validation(self, target_ids, predicate_set: Literal["atoms", "chembl_fgs"], split: Literal["validation", "test"]="validation", rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
+    def build_validation(self, target_ids, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fg_rules"], split: Literal["validation", "test"]="validation", rebuild_samples=False, max_pos_samples=100, max_neg_samples=100):
         # validation bk knowledge
         if split == "validation":
             validation_rows = self.samples_df[[str(id) in self.validation_ids for id in self.samples_df.index]]
         elif split == "test":
             validation_rows = self.samples_df[[str(id) in self.test_ids for id in self.samples_df.index]]
         prolog_lines, body_predicates = build_background_muggleton(validation_rows) if self.muggleton else build_background_chemlog(validation_rows)
-        if self.chembl_fgs:
-            prolog_lines_fgs, body_predicates_fgs = build_background_chembl_fgs(self.chebi_data, validation_rows)
+        if self.predicate_set in ["chembl_fgs", "chebi_fgs"]:
+            prolog_lines_fgs, body_predicates_fgs = build_background_fg_data(self.chebi_data, validation_rows, source=self.predicate_set)
+            prolog_lines += prolog_lines_fgs
+            body_predicates += body_predicates_fgs
+        if self.chebi_fg_rules:
+            prolog_lines_fgs, body_predicates_fgs = build_background_chebi_fg_rules()
             prolog_lines += prolog_lines_fgs
             body_predicates += body_predicates_fgs
 
@@ -359,12 +347,46 @@ def build_background_chemlog(rows):
     return comments + [line for lines in lines_by_predicate.values() for line in lines], [(pred, arities[pred]) for pred in arities.keys()]
 
 
-def build_background_chembl_fgs(chebi_data, rows):
+def build_background_chebi_fg_rules(rules_path=None):
+    """Load ChEBI functional group rules from a Prolog file and return them as BK lines and body predicates.
+    
+    Each rule defines a chebi_XXXXX(M) predicate in terms of atom-level predicates.
+    These are added as Prolog rules to the BK and as body_pred entries (arity 1) in the bias.
+    """
+    if rules_path is None:
+        rules_path = CHEBI_FG_RULES_PATH
+    
+    prolog_lines = [f"% ChEBI FG rules from {os.path.basename(rules_path)}"]
+    body_predicates = []
+    seen_predicates = set()
+    
+    with open(rules_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("%"):
+                continue
+            prolog_lines.append(line)
+            # Extract predicate name from head: chebi_XXXXX(M) :- ...
+            pred_name = line.split("(")[0].strip()
+            if pred_name and pred_name not in seen_predicates:
+                seen_predicates.add(pred_name)
+                body_predicates.append((pred_name, 1))
+    
+    print(f"Loaded {len(body_predicates)} ChEBI FG rule predicates from {rules_path}")
+    return prolog_lines, body_predicates
+
+
+def build_background_fg_data(chebi_data, rows, source: Literal["chembl_fgs", "chebi_fgs"]):
     lines_by_predicate = dict()
-    chembl_fgs = chebi_data.get_chembl_fgs()
+    if source == "chembl_fgs":
+        fg_data = chebi_data.get_chembl_fgs()
+    elif source == "chebi_fgs":
+        fg_data = chebi_data.get_chebi_fgs()
+    else:
+        raise ValueError(f"Unknown source {source}")
 
     for row in rows.itertuples():
-        for fg in chembl_fgs[row.Index]:
+        for fg in fg_data[row.Index]:
             if fg not in lines_by_predicate:
                 lines_by_predicate[fg] = []
             lines_by_predicate[fg].append(f"{fg}({row.Index}).")

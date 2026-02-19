@@ -3,7 +3,7 @@ import os
 import pandas as pd
 
 from chemlog.ilp_classification.ilp_path_manager import get_exs_path
-from chemlog.ilp_classification.mol2ilp import ILPProblemBuilder, build_background_chemlog, build_background_chembl_fgs
+from chemlog.ilp_classification.mol2ilp import ILPProblemBuilder
 
 class FGILPProblemBuilder(ILPProblemBuilder):
 

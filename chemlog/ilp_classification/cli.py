@@ -8,7 +8,7 @@ from chemlog.ilp_classification.learn_fgs import FGILPProblemBuilder
 from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subprocess, run_ilp_validation_subprocess
 from chemlog.ilp_classification.ilp_path_manager import get_exs_path, get_bk_path, get_bias_path
 
-def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_dir, timeout=20, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", max_pos_samples=100, max_neg_samples=100, selection_mode:Literal["claude", "random", "top_k"]|None=None, **kwargs):
+def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_dir, timeout=20, rebuild_samples=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fg_rules"]="atoms", max_pos_samples=100, max_neg_samples=100, selection_mode:Literal["claude", "random", "top_k"]|None=None, **kwargs):
     
         # Build settings parameters for Popper
         settings_parameters = {
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_neg_samples", type=int, default=200, help="Maximum number of negative samples per class.")
     parser.add_argument("--rebuild_samples", action="store_true", help="Whether to rebuild train bk.pl and exs.pl even if they already exist.")
     parser.add_argument("--build_validation", action="store_true", help="Whether to build validation data (bk_validation.pl and exs_validation.pl).")
-    parser.add_argument("--predicate_set", type=str, default="atoms", choices=["atoms", "chembl_fgs"], help="Whether to include CHEMBL FG predicates in the background knowledge.")
+    parser.add_argument("--predicate_set", type=str, default="atoms", choices=["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"], help="Which predicate set to use for background knowledge. 'chebi_fg_rules' adds ChEBI functional group rules from chebi_fg_rules_from_smiles.pl.")
     parser.add_argument("--selection_mode", type=str, default=None, choices=["claude", "random", "top_k"], help="Mode for selecting body predicates to include in bias file. If not specified, no selection is done and all predicates are included in the bias file.")
     # arbitrary additional arguments (optional)
     parser.add_argument("popper_kwargs", nargs="*", default=[], help="Arguments for the Popper solver.")

@@ -55,7 +55,7 @@ def ask_claude_for_predicates(
     chebi_name: str,
     chebi_definition: str | None,
     predicates: list[tuple[str, int]],
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-opus-4-6",
     top_k: int = 10,
 ) -> list[tuple[str, int]]:
     import anthropic
