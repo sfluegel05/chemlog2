@@ -97,13 +97,13 @@ class ILPProblemBuilder:
     def load_samples(self, dataset_path):
         return self.chebi_data.processed[self.chebi_data.processed["subset"] == "3_STAR"]
         
-    def build_examples(self, target_ids, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200, only_siblings=False):
+    def build_examples(self, target_ids, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200):
         min_n_pos = max_pos_samples + 1
         min_n_pos_id = None
         min_n_neg = max_neg_samples + 1
         min_n_neg_id = None
         for target_id in tqdm.tqdm(target_ids, desc="Building examples for ChEBI classes"):
-            n_pos, n_neg = self.gather_samples_for_chebi_cls(target_id, min_pos_samples, max_pos_samples, min_neg_samples, max_neg_samples, only_siblings=only_siblings)
+            n_pos, n_neg = self.gather_samples_for_chebi_cls(target_id, min_pos_samples, max_pos_samples, min_neg_samples, max_neg_samples)
             if n_pos < min_n_pos:
                 min_n_pos = n_pos
                 min_n_pos_id = target_id
