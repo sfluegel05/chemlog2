@@ -10,10 +10,6 @@ from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subproces
 from chemlog.ilp_classification.ilp_path_manager import get_exs_path, get_bk_path, get_bias_path
 
 
-def build_samples(classes_list, ilp_builder: ILPProblemBuilder, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200):
-    ilp_builder.build_examples(classes_list, min_pos_samples=min_pos_samples, max_pos_samples=max_pos_samples, min_neg_samples=min_neg_samples, max_neg_samples=max_neg_samples)
-
-
 def build_background_knowledge(classes_list, ilp_builder: ILPProblemBuilder):
     ilp_builder.build_bk(classes_list)
 
@@ -48,8 +44,12 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
             prog_str = train_result["prog_str"]  # string representation for display/storage
             score = train_result["score"]
-            print(f"ChEBI:{chebi_id} - Score: {score}")
-            print(f"    Learned program:\n{prog_str}")
+            f1 = (2*score[0] / (2*score[0] + score[1] + score[3])) if (score[0] + score[1] + score[3]) > 0 else 0.0
+            if prog_str:
+                print(f"ChEBI:{chebi_id} - F1: {f1:.2f} (TP: {score[0]}, FP: {score[1]}, TN: {score[2]}, FN: {score[3]})")
+                print(f"    Learned program:\n    {prog_str}")
+            else:
+                print(f"ChEBI:{chebi_id} - No program learned.")
 
             conf_matrix = None
             if prog_str is not None:
@@ -62,6 +62,8 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
                         bk_file=get_bk_path(chebi_id, predicate_set=ilp_builder.predicate_set, split="validation", base_dir=ilp_builder.problem_dir, selection_mode=selection_mode, selection_k=selection_k),
                         log_dir=results_dir
                     )
+                    f1 = (2*conf_matrix["TP"] / (2*conf_matrix["TP"] + conf_matrix["FP"] + conf_matrix["FN"])) if (conf_matrix["TP"] + conf_matrix["FP"] + conf_matrix["FN"]) > 0 else 0.0
+                    print(f"    Validation F1: {f1:.2f} (TP: {conf_matrix['TP']}, FP: {conf_matrix['FP']}, TN: {conf_matrix['TN']}, FN: {conf_matrix['FN']})")
                 except Exception as e:
                     print(f"Validation failed for ChEBI:{chebi_id} with error: {e}")
                     conf_matrix = None
@@ -119,13 +121,7 @@ def _make_results_dir(fg_mode: bool) -> str:
 def _handle_build_samples(args):
     classes = _load_classes(args.labels_file)
     ilp_builder = _make_ilp_builder(args)
-    build_samples(
-        classes, ilp_builder,
-        min_pos_samples=args.min_pos_samples,
-        max_pos_samples=args.max_pos_samples,
-        min_neg_samples=args.min_neg_samples,
-        max_neg_samples=args.max_neg_samples,
-    )
+    ilp_builder.build_examples(classes, min_pos_samples=args.min_pos_samples, max_pos_samples=args.max_pos_samples, min_neg_samples=args.min_neg_samples, max_neg_samples=args.max_neg_samples, only_siblings=args.only_siblings)
 
 
 def _handle_build_bk(args):
@@ -204,6 +200,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp_samples.add_argument("--max_pos_samples", type=int, default=200, help="Maximum positive samples per class.")
     sp_samples.add_argument("--min_neg_samples", type=int, default=25, help="Minimum negative samples per class.")
     sp_samples.add_argument("--max_neg_samples", type=int, default=200, help="Maximum negative samples per class.")
+    sp_samples.add_argument("--only_siblings", action="store_true", help="Only use sibling classes for negative sampling.")
+
     sp_samples.set_defaults(func=_handle_build_samples)
 
     # ── build_bk ─────────────────────────────────────────────────────────

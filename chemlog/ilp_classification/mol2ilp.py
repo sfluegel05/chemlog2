@@ -97,13 +97,13 @@ class ILPProblemBuilder:
     def load_samples(self, dataset_path):
         return self.chebi_data.processed[self.chebi_data.processed["subset"] == "3_STAR"]
         
-    def build_examples(self, target_ids, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200):
+    def build_examples(self, target_ids, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200, only_siblings=False):
         min_n_pos = max_pos_samples + 1
         min_n_pos_id = None
         min_n_neg = max_neg_samples + 1
         min_n_neg_id = None
         for target_id in tqdm.tqdm(target_ids, desc="Building examples for ChEBI classes"):
-            n_pos, n_neg = self.gather_samples_for_chebi_cls(target_id, min_pos_samples, max_pos_samples, min_neg_samples, max_neg_samples)
+            n_pos, n_neg = self.gather_samples_for_chebi_cls(target_id, min_pos_samples, max_pos_samples, min_neg_samples, max_neg_samples, only_siblings=only_siblings)
             if n_pos < min_n_pos:
                 min_n_pos = n_pos
                 min_n_pos_id = target_id
@@ -213,15 +213,14 @@ class ILPProblemBuilder:
         return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
 
 
-    def gather_samples_for_chebi_cls(self, target_id, min_pos_samples=25, max_pos_samples=100, min_neg_samples=25, max_neg_samples=100):
+    def gather_samples_for_chebi_cls(self, target_id, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200, only_siblings=False):
         # takes all samples that are positive / negative, creates .6/.2/.2 train/val/test split (up to max_pos_samples and max_neg_samples per split) 
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
         # not all descendants are molecules (i.e., have a SMILES annotation)
-        pos_samples, neg_samples = [], []
 
         df_pos = self.samples_df[[id in descendants for id in self.samples_df.index]]
         df_neg = self.samples_df[[id not in df_pos.index for id in self.samples_df.index]]
-        df_neg = self.get_closest_negatives(df_neg, target_id, n_samples="siblings") # return all negatives (that are direct neighbors)
+        df_neg = self.get_closest_negatives(df_neg, target_id, n_samples="siblings" if only_siblings else max_neg_samples * 3) # return all negatives (that are direct neighbors)
         assert len(df_pos) >= min_pos_samples, f"ChEBI class {target_id} does not have enough positive samples (found {len(df_pos)}, required are at least {min_pos_samples})"
         assert len(df_neg) >= min_neg_samples, f"ChEBI class {target_id} does not have enough negative samples (found {len(df_neg)}, required are at least {min_neg_samples})"
         
