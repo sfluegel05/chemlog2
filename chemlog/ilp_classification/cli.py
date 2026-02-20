@@ -34,7 +34,7 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
                 f.write(f"\t{key}: {value}\n")
 
         ilp_builder.build_bias(classes_list, selection_mode=selection_mode, selection_k=selection_k)
-        
+
         for chebi_id in classes_list:
             start_time = time.perf_counter()
             # Run training in subprocess (isolated Prolog session)
@@ -184,7 +184,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
     parser.add_argument("--predicate_set", type=str, default="atoms", choices=["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"], help="Which predicate set to use for background knowledge.")
     parser.add_argument("--max_vars", type=int, default=6, help="Maximum number of variables in learned rules.")
-    parser.add_argument("--max_body", type=int, default=6, help="Maximum number of body literals in learned rules.")
+    parser.add_argument("--max_body", type=int, default=8, help="Maximum number of body literals in learned rules.")
     parser.add_argument("--max_clauses", type=int, default=2, help="Maximum number of clauses in the learned program.")
 
 
