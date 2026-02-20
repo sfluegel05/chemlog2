@@ -65,7 +65,7 @@ CHEBI_FG_RULES_PATH = os.path.join("data", "chebi_fg_rules_from_smiles.pl")
 
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, relative_sample_selection=True, **kwargs):
+    def __init__(self, chebi_version, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, **kwargs):
         # chembl_fgs: ChEMBL FGs supplied as samples
         # chebi_fgs: ChEBI FGs supplied as samples
         # chebi_fg_rules: ChEBI FGs supplied as Prolog rules (extracted from ChEBI SMILES) - currently broken
@@ -73,7 +73,6 @@ class ILPProblemBuilder:
         self.chembl_fgs = predicate_set == "chembl_fgs"
         self.chebi_fg_rules = predicate_set == "chebi_fg_rules"
         self.chebi_fgs = predicate_set == "chebi_fgs"
-        self.relative_sample_selection = relative_sample_selection # select only negative samples where one of the labels is a sibling to the correct label
         self.predicate_set = predicate_set
         self.chebi_version = chebi_version
         self._problem_dir = problem_dir
@@ -183,10 +182,14 @@ class ILPProblemBuilder:
                 f.write(bias_content)
 
 
-    def get_closest_negatives(self, samples: pd.DataFrame, target_id, n_samples=100):
-        # get closest samples in terms of distance in the chebi graph
-        if n_samples >= len(samples):
-            return samples
+    def get_closest_negatives(self, samples: pd.DataFrame, target_id, n_samples: int|Literal["siblings"]=100):
+        if n_samples == "siblings":
+            only_siblings = True
+            n_samples = len(samples)
+        else:
+            only_siblings = False
+            if n_samples >= len(samples):
+                return samples
         import queue 
         q = queue.Queue()
         q.put(int(target_id))
@@ -198,8 +201,8 @@ class ILPProblemBuilder:
             for neighbor in self.undirected_graph.neighbors(current):
                 if neighbor not in visited:
                     visited.add(neighbor)
-                    if not self.relative_sample_selection:
-                        # if relative_sample_selection, only do one step in the graph and select samples that are subclasses of neighbors (i.e. siblings of target_id)
+                    if not only_siblings:
+                        # if not only_siblings, do full BFS and select samples that are subclasses of neighbors
                         q.put(neighbor)
                     for neighbor_sub in self.hierarchy_graph.successors(neighbor):
                         if str(neighbor_sub) in samples_index:
@@ -218,7 +221,7 @@ class ILPProblemBuilder:
 
         df_pos = self.samples_df[[id in descendants for id in self.samples_df.index]]
         df_neg = self.samples_df[[id not in df_pos.index for id in self.samples_df.index]]
-        df_neg = self.get_closest_negatives(df_neg, target_id, n_samples=1000000) # return all negatives (that are direct neighbors)
+        df_neg = self.get_closest_negatives(df_neg, target_id, n_samples="siblings") # return all negatives (that are direct neighbors)
         assert len(df_pos) >= min_pos_samples, f"ChEBI class {target_id} does not have enough positive samples (found {len(df_pos)}, required are at least {min_pos_samples})"
         assert len(df_neg) >= min_neg_samples, f"ChEBI class {target_id} does not have enough negative samples (found {len(df_neg)}, required are at least {min_neg_samples})"
         

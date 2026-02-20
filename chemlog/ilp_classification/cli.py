@@ -41,8 +41,8 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             exs_path = get_exs_path(chebi_id, split="train", base_dir=ilp_builder.problem_dir)
             bk_path = get_bk_path(chebi_id, split="train", base_dir=ilp_builder.problem_dir, predicate_set=ilp_builder.predicate_set, selection_mode=selection_mode, selection_k=selection_k)
             bias_path = get_bias_path(chebi_id, split="train", base_dir=ilp_builder.problem_dir, predicate_set=ilp_builder.predicate_set, selection_mode=selection_mode, selection_k=selection_k, max_vars=ilp_builder.max_vars, max_body=ilp_builder.max_body, max_clauses=ilp_builder.max_clauses)
-            if not os.path.exists(exs_path) or not os.path.exists(bk_path) or not os.path.exists(bias_path):
-                print(f"Missing files for ChEBI:{chebi_id} - skipping. exs_path: {exs_path}, bk_path: {bk_path}, bias_path: {bias_path}")
+            if not os.path.exists(exs_path) or not os.path.exists(bk_path):
+                print(f"Missing files for ChEBI:{chebi_id} - skipping. exs_path: {exs_path}, bk_path: {bk_path}")
                 continue
             train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
             prog_str = train_result["prog_str"]  # string representation for display/storage
