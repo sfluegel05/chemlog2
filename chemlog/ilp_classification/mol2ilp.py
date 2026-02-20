@@ -163,7 +163,7 @@ class ILPProblemBuilder:
     
     def build_bias(self, target_ids, selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None):
         # use bias template generated in build_bk and create settings-specific bias files
-        for target_id in target_ids:
+        for target_id in tqdm.tqdm(target_ids, desc="Building bias files for ChEBI classes"):
             plain_bias_path = get_bias_path(target_id, split="train", base_dir=self.problem_dir, predicate_set=self.predicate_set, selection_mode=selection_mode, selection_k=selection_k) # template bias file created in build_bk
             if selection_mode is None:
                 assert os.path.exists(plain_bias_path), f"Bias template file {plain_bias_path} does not exist. Please run build_bk first to create the bias template before running build_bias."

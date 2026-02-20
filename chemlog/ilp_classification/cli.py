@@ -18,7 +18,7 @@ def build_background_knowledge(classes_list, ilp_builder: ILPProblemBuilder):
     ilp_builder.build_bk(classes_list)
 
 
-def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_dir, timeout=20, selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None, **kwargs):
+def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_dir, timeout=20, selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None):
 
         # Build settings parameters for Popper
         settings_parameters = {
@@ -26,7 +26,6 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             "anytime_solver": "nuwls",
             "timeout": timeout,
         }
-        settings_parameters.update(kwargs)
 
         with open(os.path.join(results_dir, "config.yml"), "a+") as f:
             f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
@@ -34,6 +33,8 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             for key, value in settings_parameters.items():
                 f.write(f"\t{key}: {value}\n")
 
+        ilp_builder.build_bias(classes_list, selection_mode=selection_mode, selection_k=selection_k)
+        
         for chebi_id in classes_list:
             start_time = time.perf_counter()
             # Run training in subprocess (isolated Prolog session)
@@ -41,8 +42,8 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             exs_path = get_exs_path(chebi_id, split="train", base_dir=ilp_builder.problem_dir)
             bk_path = get_bk_path(chebi_id, split="train", base_dir=ilp_builder.problem_dir, predicate_set=ilp_builder.predicate_set, selection_mode=selection_mode, selection_k=selection_k)
             bias_path = get_bias_path(chebi_id, split="train", base_dir=ilp_builder.problem_dir, predicate_set=ilp_builder.predicate_set, selection_mode=selection_mode, selection_k=selection_k, max_vars=ilp_builder.max_vars, max_body=ilp_builder.max_body, max_clauses=ilp_builder.max_clauses)
-            if not os.path.exists(exs_path) or not os.path.exists(bk_path):
-                print(f"Missing files for ChEBI:{chebi_id} - skipping. exs_path: {exs_path}, bk_path: {bk_path}")
+            if not os.path.exists(exs_path) or not os.path.exists(bk_path) or not os.path.exists(bias_path):
+                print(f"Missing files for ChEBI:{chebi_id} - skipping. exs_path: {exs_path}, bk_path: {bk_path}, bias_path: {bias_path}")
                 continue
             train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
             prog_str = train_result["prog_str"]  # string representation for display/storage
@@ -146,17 +147,11 @@ def _handle_learn(args):
 
     with tee_output(log_path):
         ilp_builder = _make_ilp_builder(args)
-
-        popper_kwargs = {k: v for k, v in (a.split("=") for a in args.popper_kwargs)}
         learn_chebi_classes(
             classes, ilp_builder, results_dir,
             timeout=args.timeout,
-            predicate_set=args.predicate_set,
-            max_pos_samples=args.max_pos_samples,
-            max_neg_samples=args.max_neg_samples,
             selection_mode=args.selection_mode,
             selection_k=args.top_k,
-            **popper_kwargs,
         )
 
 
@@ -230,7 +225,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp_learn.add_argument("--max_neg_samples", type=int, default=200, help="Maximum negative samples per class.")
     sp_learn.add_argument("--selection_mode", type=str, default=None, choices=["claude", "random", "top_k"], help="Mode for selecting body predicates in bias file.")
     sp_learn.add_argument("--top_k", type=int, default=10, help="Number of predicates selection with selection_mode (required if selection_mode is set).")
-    sp_learn.add_argument("popper_kwargs", nargs="*", default=[], help="Extra key=value arguments forwarded to Popper.")
     sp_learn.set_defaults(func=_handle_learn)
 
     # ── select_predicates ────────────────────────────────────────────────
