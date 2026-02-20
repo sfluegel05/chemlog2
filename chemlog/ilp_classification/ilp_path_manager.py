@@ -1,33 +1,35 @@
 import os
 from typing import Literal
 
-def get_exs_path(chebi_id, base_dir=None, split:Literal["train", "validation", "test"]="train"):
+def get_problem_dir(chebi_id, split:Literal["train", "validation", "test"], base_dir=None):
     if base_dir is None:
         base_dir = os.path.join("ilp", "chebi_v244")
-    filename = f"exs_{split}.pl" if split in ["train", "validation"] else f"exs.pl"
-    os.makedirs(os.path.join(base_dir, f"chebi_{chebi_id}"), exist_ok=True)
-    return os.path.join(base_dir, f"chebi_{chebi_id}", filename)
+    problem_dir = os.path.join(base_dir, f"chebi_{chebi_id}", split)
+    os.makedirs(problem_dir, exist_ok=True)
+    return problem_dir
 
-def get_bk_path(chebi_id, base_dir=None, predicate_set="atoms", split:Literal["train", "validation", "test"]="train"):
-    if base_dir is None:
-        base_dir = os.path.join("ilp", "chebi_v244")
-    if split == "train":
-        bk_dir = os.path.join(base_dir, f"chebi_{chebi_id}", predicate_set)
-        bk_file = f"bk.pl"
-    else:
-        bk_dir = os.path.join(base_dir, predicate_set)
-        bk_file = f"bk_{split}.pl"
+def get_exs_path(chebi_id, split:Literal["train", "validation", "test"], base_dir=None):
+    problem_dir = get_problem_dir(chebi_id, split, base_dir)
+    filename = "exs.pl"
+    return os.path.join(problem_dir, filename)
+
+def get_bk_path(chebi_id, split:Literal["train", "validation", "test"], predicate_set, base_dir=None, selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None):
+    problem_dir = get_problem_dir(chebi_id, split, base_dir)
+    bk_dir = os.path.join(problem_dir, predicate_set)
     os.makedirs(bk_dir, exist_ok=True)
-    return os.path.join(bk_dir, bk_file)
-
-def get_bias_path(chebi_id, base_dir=None, predicate_set="atoms", selection_mode:Literal["claude", "random", "top_k"]|None=None, max_vars=None, max_body=None, max_clauses=None):
-    if base_dir is None:
-        base_dir = os.path.join("ilp", "chebi_v244")
-    bk_dir = os.path.join(base_dir, f"chebi_{chebi_id}", predicate_set)
     if selection_mode:
-        bias_file = f"bias_{selection_mode}"
-    else:
-        bias_file = f"bias"
+        bk_dir = os.path.join(bk_dir, f"selection_{selection_mode}_k={selection_k}")
+        os.makedirs(bk_dir, exist_ok=True)
+    filename = "bk.pl"
+    return os.path.join(bk_dir, filename)
+
+def get_bias_path(chebi_id, split:Literal["train", "validation", "test"], base_dir=None, predicate_set="atoms", selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None, max_vars=None, max_body=None, max_clauses=None):
+    problem_dir = get_problem_dir(chebi_id, split, base_dir)
+    bk_dir = os.path.join(problem_dir, predicate_set)
+    os.makedirs(bk_dir, exist_ok=True)
+    if selection_mode:
+        bk_dir = os.path.join(bk_dir, f"selection_{selection_mode}_k={selection_k}")
+    bias_file = f"bias"
     if max_vars is not None:
         bias_file += f"_max_vars={max_vars}"
     if max_body is not None:
@@ -35,5 +37,4 @@ def get_bias_path(chebi_id, base_dir=None, predicate_set="atoms", selection_mode
     if max_clauses is not None:
         bias_file += f"_max_clauses={max_clauses}"
     bias_file += ".pl"
-    os.makedirs(bk_dir, exist_ok=True)
     return os.path.join(bk_dir, bias_file)

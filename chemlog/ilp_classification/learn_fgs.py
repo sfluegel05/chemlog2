@@ -5,6 +5,7 @@ import pandas as pd
 from chemlog.ilp_classification.ilp_path_manager import get_exs_path
 from chemlog.ilp_classification.mol2ilp import ILPProblemBuilder
 
+# todo: this class is out of dat
 class FGILPProblemBuilder(ILPProblemBuilder):
 
     @property
