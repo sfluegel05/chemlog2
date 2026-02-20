@@ -10,8 +10,6 @@ from chemlog.ilp_classification.ilp_classifier import run_ilp_training_subproces
 from chemlog.ilp_classification.ilp_path_manager import get_exs_path, get_bk_path, get_bias_path
 
 
-def build_background_knowledge(classes_list, ilp_builder: ILPProblemBuilder):
-    ilp_builder.build_bk(classes_list)
 
 
 def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_dir, timeout=20, selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None):
@@ -121,13 +119,13 @@ def _make_results_dir(fg_mode: bool) -> str:
 def _handle_build_samples(args):
     classes = _load_classes(args.labels_file)
     ilp_builder = _make_ilp_builder(args)
-    ilp_builder.build_examples(classes, min_pos_samples=args.min_pos_samples, max_pos_samples=args.max_pos_samples, min_neg_samples=args.min_neg_samples, max_neg_samples=args.max_neg_samples, only_siblings=args.only_siblings)
+    ilp_builder.build_examples(classes, min_pos_samples=args.min_pos_samples, max_pos_samples=args.max_pos_samples, min_neg_samples=args.min_neg_samples, max_neg_samples=args.max_neg_samples)
 
 
 def _handle_build_bk(args):
     classes = _load_classes(args.labels_file)
     ilp_builder = _make_ilp_builder(args)
-    build_background_knowledge(classes, ilp_builder)
+    ilp_builder.build_bk(classes)
 
 
 def _handle_learn(args):
@@ -200,7 +198,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp_samples.add_argument("--max_pos_samples", type=int, default=200, help="Maximum positive samples per class.")
     sp_samples.add_argument("--min_neg_samples", type=int, default=25, help="Minimum negative samples per class.")
     sp_samples.add_argument("--max_neg_samples", type=int, default=200, help="Maximum negative samples per class.")
-    sp_samples.add_argument("--only_siblings", action="store_true", help="Only use sibling classes for negative sampling.")
 
     sp_samples.set_defaults(func=_handle_build_samples)
 

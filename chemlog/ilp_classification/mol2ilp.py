@@ -182,47 +182,44 @@ class ILPProblemBuilder:
                 f.write(bias_content)
 
 
-    def get_closest_negatives(self, samples: pd.DataFrame, target_id, n_samples: int|Literal["siblings"]=100):
-        if n_samples == "siblings":
-            only_siblings = True
-            n_samples = len(samples)
-        else:
-            only_siblings = False
-            if n_samples >= len(samples):
-                return samples
+    def get_closest_negatives(self, samples: pd.DataFrame, target_id, min_samples=25, max_samples=600):
+        # goal: reach min_samples, but continue collecting samples until max_samples if they are siblings
         import queue 
         q = queue.Queue()
         q.put(int(target_id))
         visited = set() # visit closest labels
         selected = set() # select samples that are subclasses of closest labels until we have enough samples
         samples_index = list(str(id) for id in samples.index)
-        while not q.empty() and len(selected) < n_samples:
+        siblings = True
+        while not q.empty():
             current = q.get()
             for neighbor in self.undirected_graph.neighbors(current):
                 if neighbor not in visited:
                     visited.add(neighbor)
-                    if not only_siblings:
-                        # if not only_siblings, do full BFS and select samples that are subclasses of neighbors
-                        q.put(neighbor)
+                    q.put(neighbor)
                     for neighbor_sub in self.hierarchy_graph.successors(neighbor):
                         if str(neighbor_sub) in samples_index:
                             selected.add(str(neighbor_sub))
-                        if len(selected) >= n_samples:
+                        if len(selected) >= max_samples or (len(selected) >= min_samples and not siblings):
                             return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
+            
+            if len(selected) >= min_samples:
+                break
+            siblings = False
 
         return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
 
 
-    def gather_samples_for_chebi_cls(self, target_id, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200, only_siblings=False):
+    def gather_samples_for_chebi_cls(self, target_id, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200):
         # takes all samples that are positive / negative, creates .6/.2/.2 train/val/test split (up to max_pos_samples and max_neg_samples per split) 
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
         # not all descendants are molecules (i.e., have a SMILES annotation)
 
         df_pos = self.samples_df[[id in descendants for id in self.samples_df.index]]
         df_neg = self.samples_df[[id not in df_pos.index for id in self.samples_df.index]]
-        df_neg = self.get_closest_negatives(df_neg, target_id, n_samples="siblings" if only_siblings else max_neg_samples * 3) # return all negatives (that are direct neighbors)
-        assert len(df_pos) >= min_pos_samples, f"ChEBI class {target_id} does not have enough positive samples (found {len(df_pos)}, required are at least {min_pos_samples})"
-        assert len(df_neg) >= min_neg_samples, f"ChEBI class {target_id} does not have enough negative samples (found {len(df_neg)}, required are at least {min_neg_samples})"
+        df_neg = self.get_closest_negatives(df_neg, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples*3) # return all negatives (that are direct neighbors)
+        assert len(df_pos) >= min_pos_samples, f"ChEBI class {target_id} does not have enough positive samples (found {len(df_pos)}, required are at least {min_pos_samples}). Got samples {df_pos.index.tolist()}"
+        assert len(df_neg) >= min_neg_samples, f"ChEBI class {target_id} does not have enough negative samples (found {len(df_neg)}, required are at least {min_neg_samples}). Got samples {df_neg.index.tolist()}"
         
         # sample 60/20/20 for train/validation/test splits (but only max_pos_samples and max_neg_samples per split)
         samples_by_split = dict()
