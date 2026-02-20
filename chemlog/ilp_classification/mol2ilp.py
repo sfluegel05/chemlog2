@@ -65,7 +65,7 @@ CHEBI_FG_RULES_PATH = os.path.join("data", "chebi_fg_rules_from_smiles.pl")
 
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, relative_sample_selection=False, **kwargs):
+    def __init__(self, chebi_version, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, relative_sample_selection=True, **kwargs):
         # chembl_fgs: ChEMBL FGs supplied as samples
         # chebi_fgs: ChEBI FGs supplied as samples
         # chebi_fg_rules: ChEBI FGs supplied as Prolog rules (extracted from ChEBI SMILES) - currently broken
