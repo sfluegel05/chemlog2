@@ -211,13 +211,14 @@ class ILPProblemBuilder:
 
 
     def gather_samples_for_chebi_cls(self, target_id, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200):
-        # takes all samples that are positive / negative, creates .6/.2/.2 train/val/test split (up to max_pos_samples and max_neg_samples per split) 
+        # takes all samples that are positive / negative, creates .6/.2/.2 train/val/test split (up to max_pos_samples and max_neg_samples total) 
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
-        # not all descendants are molecules (i.e., have a SMILES annotation)
+        # not all descendants are molecules (i.e., have a SMILES annotation) -> only take the ones that are in the samples_df (i.e. have a SMILES annotation and are in the 3_STAR subset)
 
         df_pos = self.samples_df[[id in descendants for id in self.samples_df.index]]
         df_neg = self.samples_df[[id not in df_pos.index for id in self.samples_df.index]]
-        df_neg = self.get_closest_negatives(df_neg, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples*3) # return all negatives (that are direct neighbors)
+        df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)), random_state=42) # if there are more positives than max_pos_samples, sample randomly
+        df_neg = self.get_closest_negatives(df_neg, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples) # return all negatives (that are direct neighbors)
         assert len(df_pos) >= min_pos_samples, f"ChEBI class {target_id} does not have enough positive samples (found {len(df_pos)}, required are at least {min_pos_samples}). Got samples {df_pos.index.tolist()}"
         assert len(df_neg) >= min_neg_samples, f"ChEBI class {target_id} does not have enough negative samples (found {len(df_neg)}, required are at least {min_neg_samples}). Got samples {df_neg.index.tolist()}"
         
@@ -227,11 +228,8 @@ class ILPProblemBuilder:
             df = df_pos if posneg == "pos" else df_neg
             samples_by_split[(posneg, "train")] = df.sample(frac=0.6, random_state=42)
             pos_val_test = df[~df.index.isin(samples_by_split[(posneg, "train")].index)]
-            samples_by_split[(posneg, "train")] = samples_by_split[(posneg, "train")].sample(min(max_pos_samples if posneg == "pos" else max_neg_samples, len(samples_by_split[(posneg, "train")])), random_state=42)
             samples_by_split[(posneg, "validation")] = pos_val_test.sample(frac=0.5, random_state=42)
             samples_by_split[(posneg, "test")] = pos_val_test[~pos_val_test.index.isin(samples_by_split[(posneg, "validation")].index)]
-            samples_by_split[(posneg, "validation")] = samples_by_split[(posneg, "validation")].sample(min(max_pos_samples if posneg == "pos" else max_neg_samples, len(samples_by_split[(posneg, "validation")])), random_state=42)
-            samples_by_split[(posneg, "test")] = samples_by_split[(posneg, "test")].sample(min(max_pos_samples if posneg == "pos" else max_neg_samples, len(samples_by_split[(posneg, "test")])), random_state=42)
 
         for (posneg, split), df in samples_by_split.items():
             exs_path = get_exs_path(target_id, base_dir=self.problem_dir, split=split)
