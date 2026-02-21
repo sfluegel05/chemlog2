@@ -42,9 +42,10 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
             train_result = run_ilp_training_subprocess(exs_path, bk_path, bias_path, settings_parameters, log_dir=results_dir)
             prog_str = train_result["prog_str"]  # string representation for display/storage
             score = train_result["score"]
-            f1 = (2*score[0] / (2*score[0] + score[1] + score[3])) if (score[0] + score[1] + score[3]) > 0 else 0.0
-            if prog_str:
+            if score:
+                f1 = (2*score[0] / (2*score[0] + score[1] + score[3])) if (score[0] + score[1] + score[3]) > 0 else 0.0
                 print(f"ChEBI:{chebi_id} - F1: {f1:.2f} (TP: {score[0]}, FP: {score[1]}, TN: {score[2]}, FN: {score[3]})")
+            if prog_str:
                 print(f"    Learned program:\n    {prog_str}")
             else:
                 print(f"ChEBI:{chebi_id} - No program learned.")

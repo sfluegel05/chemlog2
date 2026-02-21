@@ -248,7 +248,6 @@ def get_atom_id(atom: int, molecule_id):
 
 
 def build_background_chemlog(rows):
-    print(f"Building Chemlog-style background knowledge for {len(rows)} molecules")
     comments = []
     lines_by_predicate = {"has_atom" : []}
     arities = {"has_atom" : 2}  # hardcode has_atom predicate
