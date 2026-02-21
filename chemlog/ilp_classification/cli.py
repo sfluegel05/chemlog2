@@ -67,15 +67,15 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
                     print(f"Validation failed for ChEBI:{chebi_id} with error: {e}")
                     conf_matrix = None
 
-                with open(os.path.join(results_dir, "results.json"), "a+") as f:
-                    result_entry = {
-                        "chebi_id": chebi_id,
-                        "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
-                        "time_taken": time.perf_counter() - start_time,
-                        "program": prog_str,
-                        "validation_score": conf_matrix,
-                    }
-                    f.write(json.dumps(result_entry) + "\n")
+            with open(os.path.join(results_dir, "results.json"), "a+") as f:
+                result_entry = {
+                    "chebi_id": chebi_id,
+                    "train_score": {"TP": score[0], "FP": score[1], "TN": score[2], "FN": score[3]} if score else None,
+                    "time_taken": time.perf_counter() - start_time,
+                    "program": prog_str,
+                    "validation_score": conf_matrix,
+                }
+                f.write(json.dumps(result_entry) + "\n")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
