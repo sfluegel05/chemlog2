@@ -140,8 +140,8 @@ class PopperWrapper:
     
 def run_ilp_training_subprocess(exs_file, bk_file, bias_file, settings_parameters, log_dir=None):
     """Run Popper ILP learning in a separate subprocess for isolated Prolog session."""
-    print(f"Running ILP training subprocess with exs_file={exs_file}, bk_file={bk_file}, bias_file={bias_file}...")
-    print(f"Settings parameters: {settings_parameters}")
+    #print(f"Running ILP training subprocess with exs_file={exs_file}, bk_file={bk_file}, bias_file={bias_file}...")
+    #print(f"Settings parameters: {settings_parameters}")
     script = f'''
 import json
 import pickle

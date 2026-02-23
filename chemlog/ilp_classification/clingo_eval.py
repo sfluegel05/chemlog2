@@ -13,10 +13,11 @@ def filter_impossible_rules(rules: list[str], predicates_in_bk: list[str]):
     print(f"Filtered out {len(rules) - len(rules_filtered)} impossible rules. Remaining rules: {len(rules_filtered)}")
     return rules_filtered
 
-def evaluate_with_clingo(rules: list[str], background_facts: list[str], target_labels: list[int], examples: list, predicates_in_bk: list[str]):
+def evaluate_with_clingo(rules: list[str], background_facts: list[str], target_labels: list[int], examples: list, predicates_in_bk: list[str]|None=None):
     import clingo
 
-    rules = filter_impossible_rules(rules, predicates_in_bk)
+    if predicates_in_bk is not None:
+        rules = filter_impossible_rules(rules, predicates_in_bk)
     ctl = clingo.Control()
     ctl.add("base", [], "\n".join(background_facts))
     ctl.add("base", [], "\n".join(rules))
