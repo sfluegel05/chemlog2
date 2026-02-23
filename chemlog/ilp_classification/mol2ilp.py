@@ -379,6 +379,9 @@ def build_background_fg_data(chebi_data, rows, source: Literal["chembl_fgs", "ch
         raise ValueError(f"Unknown source {source}")
 
     for row in rows.itertuples():
+        if row.Index not in fg_data:
+            print(f"Warning: No functional group data found for CHEBI:{row.Index} in source {source}. This molecule will only have atom and bond predicates in the background knowledge.")
+            continue
         for fg in fg_data[row.Index]:
             if fg not in lines_by_predicate:
                 lines_by_predicate[fg] = []
