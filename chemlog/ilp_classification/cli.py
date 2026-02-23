@@ -1,4 +1,5 @@
 import os
+import traceback
 from typing import Literal
 import json
 import time
@@ -55,16 +56,17 @@ def learn_chebi_classes(classes_list, ilp_builder: ILPProblemBuilder, results_di
                 # Run validation in subprocess (isolated Prolog session)
                 print(f"Validating ChEBI:{chebi_id}...")
                 try:
-                    conf_matrix = run_ilp_validation_subprocess(
+                    from chemlog.ilp_classification.clingo_eval import run_ilp_validation_clingo
+                    conf_matrix = run_ilp_validation_clingo(
                         chebi_id, prog_str,
                         exs_file=get_exs_path(chebi_id, split="validation", base_dir=ilp_builder.problem_dir),
                         bk_file=get_bk_path(chebi_id, predicate_set=ilp_builder.predicate_set, split="validation", base_dir=ilp_builder.problem_dir, selection_mode=selection_mode, selection_k=selection_k),
-                        log_dir=results_dir
                     )
                     f1 = (2*conf_matrix["TP"] / (2*conf_matrix["TP"] + conf_matrix["FP"] + conf_matrix["FN"])) if (conf_matrix["TP"] + conf_matrix["FP"] + conf_matrix["FN"]) > 0 else 0.0
                     print(f"    Validation F1: {f1:.2f} (TP: {conf_matrix['TP']}, FP: {conf_matrix['FP']}, TN: {conf_matrix['TN']}, FN: {conf_matrix['FN']})")
                 except Exception as e:
                     print(f"Validation failed for ChEBI:{chebi_id} with error: {e}")
+                    traceback.print_exc()
                     conf_matrix = None
 
             with open(os.path.join(results_dir, "results.json"), "a+") as f:
@@ -89,6 +91,7 @@ def _make_ilp_builder(args) -> ILPProblemBuilder:
     if args.fg_mode:
         return FGILPProblemBuilder(
             chebi_version=args.chebi_version,
+            chebi_split=args.chebi_split,
             dataset_path=os.path.join("data", "chebi_fgs_dataset.pkl"),
             predicate_set=args.predicate_set,
             max_vars=args.max_vars,
@@ -97,6 +100,7 @@ def _make_ilp_builder(args) -> ILPProblemBuilder:
         )
     return ILPProblemBuilder(
         chebi_version=args.chebi_version,
+        chebi_split=args.chebi_split,
         muggleton=False,
         predicate_set=args.predicate_set,
         max_vars=args.max_vars,
@@ -169,15 +173,64 @@ def _handle_select_predicates(args):
     print(f"\nCompleted: {successful}/{len(chebi_ids)} classes processed successfully")
 
 
+def _handle_test(args):
+    from chemlog.ilp_classification.test import test_chebi_classes
+
+    # load config from the run to evaluate
+    with open(os.path.join(args.run_to_evaluate, "config.yml"), "r") as f:
+        config = {}
+        for line in f:
+            if ": " in line:
+                key, value = line.strip().split(": ", 1)
+                config[key] = value
+    assert "chebi_version" in config and "fg_mode" in config and "predicate_set" in config and "selection_mode" in config and "selection_k" in config and "chebi_split" in config, \
+        "Config file must contain chebi_version, fg_mode, predicate_set, selection_mode, selection_k, and chebi_split"
+
+    fg_mode = config["fg_mode"] == "True"
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    results_dir = os.path.join("ilp", "results_test", f"run_fgs_{timestamp}" if fg_mode else f"run_{timestamp}")
+    os.makedirs(results_dir, exist_ok=True)
+    with open(os.path.join(results_dir, "results.json"), "w+") as f:
+        f.write("")
+
+    log_path = os.path.join(results_dir, "run.log")
+
+    # write config file
+    with open(os.path.join(results_dir, "config.yml"), "w+") as f:
+        f.write("args:\n")
+        for arg in vars(args):
+            f.write(f"  {arg}: {getattr(args, arg)}\n")
+
+    with tee_output(log_path):
+        if fg_mode:
+            ilp_builder = FGILPProblemBuilder(
+                chebi_version=config["chebi_version"],
+                dataset_path=os.path.join("data", "chebi_fgs_dataset.pkl"),
+                predicate_set=config["predicate_set"],
+                chebi_split=config["chebi_split"]
+            )
+        else:
+            ilp_builder = ILPProblemBuilder(
+                chebi_version=config["chebi_version"],
+                muggleton=False,
+                predicate_set=config["predicate_set"],
+                selection_mode=config["selection_mode"],
+                selection_k=int(config["selection_k"]) if config["selection_k"] else None,
+                chebi_split=config["chebi_split"],
+            )
+        test_chebi_classes(args.run_to_evaluate, ilp_builder, results_dir, predicate_set=config["predicate_set"])
+
+
 # ── Argument parsing ─────────────────────────────────────────────────────────
 
 
 def _add_common_args(parser: argparse.ArgumentParser):
     """Add arguments shared by all subcommands that build an ILPProblemBuilder."""
     parser.add_argument("--labels_file", type=str, required=True, help="Path to the labels file (one ChEBI ID per line).")
+    parser.add_argument("--chebi_split", type=str, required=True, help="Path to the ChEBI split file.")
     parser.add_argument("--fg_mode", action="store_true", help="Learn functional groups instead of ChEBI classes.")
     parser.add_argument("--chebi_version", type=int, default=244, help="ChEBI version to use.")
-    parser.add_argument("--predicate_set", type=str, default="atoms", choices=["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"], help="Which predicate set to use for background knowledge.")
+    parser.add_argument("--predicate_set", type=str, default="atoms", choices=["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules", "chebi_fg_learned_rules"], help="Which predicate set to use for background knowledge.")
     parser.add_argument("--max_vars", type=int, default=6, help="Maximum number of variables in learned rules.")
     parser.add_argument("--max_body", type=int, default=8, help="Maximum number of body literals in learned rules.")
     parser.add_argument("--max_clauses", type=int, default=2, help="Maximum number of clauses in the learned program.")
@@ -235,6 +288,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp_select.add_argument("--selection_mode", type=str, default="claude", choices=["claude", "random", "top_k"], help="How to select predicates.")
     sp_select.add_argument("--top_k", type=int, default=10, help="Number of predicates to select.")
     sp_select.set_defaults(func=_handle_select_predicates)
+
+    # ── test ─────────────────────────────────────────────────────────────
+    sp_test = subparsers.add_parser(
+        "test",
+        help="Evaluate learned programs on the test set using results from a previous run.",
+    )
+    sp_test.add_argument("--run_to_evaluate", type=str, required=True, help="Path to a previous run directory (must contain results.json and config.yml).")
+    sp_test.set_defaults(func=_handle_test)
 
     return parser
 

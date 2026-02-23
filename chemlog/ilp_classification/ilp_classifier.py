@@ -140,6 +140,8 @@ class PopperWrapper:
     
 def run_ilp_training_subprocess(exs_file, bk_file, bias_file, settings_parameters, log_dir=None):
     """Run Popper ILP learning in a separate subprocess for isolated Prolog session."""
+    print(f"Running ILP training subprocess with exs_file={exs_file}, bk_file={bk_file}, bias_file={bias_file}...")
+    print(f"Settings parameters: {settings_parameters}")
     script = f'''
 import json
 import pickle
@@ -274,8 +276,22 @@ print(json.dumps(res))
 
 
 if __name__ == "__main__":
-    chebi_id = "47909"
-    rule = "chebi_47909(V0):- has_atom(V0,V1),h(V4),bSINGLE(V2,V4),h(V3),has_bond_to(V1,V2),has_bond_to(V1,V3)."
-    exs_file = os.path.join("ilp", "chebi_v244", f"chebi_{chebi_id}", "exs_test.pl")
-    bk_file = os.path.join("ilp", "chebi_v244", "atoms", "bk_test.pl")
-    run_ilp_validation(chebi_id, rule, exs_file, bk_file)
+    import json
+    import pickle
+    import base64
+    from popper.loop import learn_solution
+    from popper.util import Settings, format_prog
+
+    settings_parameters = {
+        "noisy": True,
+        "anytime_solver": "nuwls",
+    }
+    ex_file = os.path.join("ilp", "chebi_v244", "chebi_73754", "train", "exs.pl")
+    bk_file = os.path.join("ilp", "chebi_v244", "chebi_73754", "train", "chebi_fg_learned_rules", "bk.pl")
+    bias_file = os.path.join("ilp", "chebi_v244", "chebi_73754", "train", "chebi_fg_learned_rules", "bias_max_vars=6_max_body=8_max_clauses=2.pl")
+    settings = Settings(ex_file=f"{ex_file}", bk_file=f"{bk_file}", bias_file=f"{bias_file}", **settings_parameters)
+    prog, score, stats = learn_solution(settings)
+    prog_str = format_prog(prog) if prog else None
+
+    result = {"prog_str": prog_str, "score": list(score) if score else None}
+    print(result)

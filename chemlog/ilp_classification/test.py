@@ -4,11 +4,12 @@ import json
 import os
 import time
 from chemlog.ilp_classification.ilp_classifier import run_ilp_validation_subprocess
+from chemlog.ilp_classification.ilp_path_manager import get_bk_path, get_exs_path
 from chemlog.ilp_classification.mol2ilp import ILPProblemBuilder, tee_output
 from chemlog.ilp_classification.learn_fgs import FGILPProblemBuilder
 from typing import Literal
 
-def test_chebi_classes(run_to_evaluate, ilp_builder: ILPProblemBuilder, results_dir, predicate_set: Literal["atoms", "chembl_fgs"]="atoms", **kwargs):
+def test_chebi_classes(run_to_evaluate, ilp_builder: ILPProblemBuilder, results_dir, **kwargs):
     
     with open(os.path.join(results_dir, "config.yml"), "a+") as f:
         f.write(f"problem_dir: {ilp_builder.problem_dir}\n")
@@ -22,10 +23,7 @@ def test_chebi_classes(run_to_evaluate, ilp_builder: ILPProblemBuilder, results_
             except json.JSONDecodeError:
                 print(f"Failed to parse line: {line}")
         classes_list = [row["chebi_id"] for row in results]
-    
-    if not os.path.exists(os.path.join(ilp_builder.problem_dir, predicate_set, "bk_test.pl")):
-        ilp_builder.build_validation(classes_list, predicate_set=predicate_set, split="test", max_pos_samples=1000000, max_neg_samples=1000000)
-    
+        
     for row in results:
         chebi_id = row["chebi_id"]
         prog_str = row["program"]
@@ -34,12 +32,13 @@ def test_chebi_classes(run_to_evaluate, ilp_builder: ILPProblemBuilder, results_
         # Run validation in subprocess (isolated Prolog session)
         print(f"Testing ChEBI:{chebi_id}...")
         try:
-            conf_matrix = run_ilp_validation_subprocess(
+            from chemlog.ilp_classification.clingo_eval import run_ilp_validation_clingo
+            conf_matrix = run_ilp_validation_clingo(
                 chebi_id, prog_str,
-                exs_file=os.path.join(ilp_builder.problem_dir, f"chebi_{chebi_id}", "exs_test.pl"),
-                bk_file=os.path.join(ilp_builder.problem_dir, predicate_set, "bk_test.pl"),
-                log_dir=results_dir
-                )
+                exs_file=get_exs_path(chebi_id, split="test", base_dir=ilp_builder.problem_dir),
+                bk_file=get_bk_path(chebi_id, predicate_set=ilp_builder.predicate_set, split="test", base_dir=ilp_builder.problem_dir, 
+                                    selection_mode=ilp_builder.selection_mode, selection_k=ilp_builder.selection_k),
+            )
         except Exception as e:
             print(f"Testing failed for ChEBI:{chebi_id} with error: {e}")
             conf_matrix = None

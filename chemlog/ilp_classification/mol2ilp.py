@@ -14,6 +14,7 @@ from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 import pandas as pd
 import time
 from chemlog.ilp_classification.ilp_path_manager import get_bk_path, get_bias_path, get_exs_path
+from chemlog.ilp_classification.clingo_eval import evaluate_with_clingo
 
 
 @contextmanager
@@ -61,18 +62,16 @@ def tee_output(log_path):
 
 
 CHEBI_FG_RULES_PATH = os.path.join("data", "chebi_fg_rules_from_smiles.pl")
+CHEBI_FG_LEARNED_RULES_PATH = os.path.join("data", "chebi_fg_learned_rules.pl")
 
 
 class ILPProblemBuilder:
 
-    def __init__(self, chebi_version, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, **kwargs):
+    def __init__(self, chebi_version, chebi_split, problem_dir=None, muggleton=False, predicate_set: Literal["atoms", "chembl_fgs", "chebi_fgs", "chebi_fg_rules", "chebi_fg_learned_rules"] = "atoms", max_vars=6, max_body=6, max_clauses=2, **kwargs):
         # chembl_fgs: ChEMBL FGs supplied as samples
         # chebi_fgs: ChEBI FGs supplied as samples
         # chebi_fg_rules: ChEBI FGs supplied as Prolog rules (extracted from ChEBI SMILES) - currently broken
-        # chebi_fgs_learned_rules #todo ChEBI FGs supplied as rules, learned with ILP from chebi_fgs
-        self.chembl_fgs = predicate_set == "chembl_fgs"
-        self.chebi_fg_rules = predicate_set == "chebi_fg_rules"
-        self.chebi_fgs = predicate_set == "chebi_fgs"
+        # chebi_fgs_learned_rules ChEBI FGs supplied as rules, learned with ILP from chebi_fgs
         self.predicate_set = predicate_set
         self.chebi_version = chebi_version
         self._problem_dir = problem_dir
@@ -89,6 +88,25 @@ class ILPProblemBuilder:
         nontrans_hierarchy = self.chebi_data.build_hierarchy_graph()
         self.undirected_graph = nontrans_hierarchy.to_undirected()
         self.samples_df = self.load_samples(kwargs["dataset_path"] if "dataset_path" in kwargs else None)
+
+        # load splits from csv file
+        with open(chebi_split, "r") as f:
+            lines = f.readlines()
+        self.train_ids = set()
+        self.validation_ids = set()
+        self.test_ids = set()
+        for line in lines[1:]:
+            parts = line.strip().split(",")
+            chebi_id = parts[0].strip()
+            split = parts[1]
+            if split == "train":
+                self.train_ids.add(chebi_id)
+            elif split == "validation":
+                self.validation_ids.add(chebi_id)
+            elif split == "test":
+                self.test_ids.add(chebi_id)
+            else:
+                raise ValueError(f"Unknown split '{split}' for ChEBI ID {chebi_id}")
             
     @property
     def problem_dir(self):
@@ -120,8 +138,18 @@ class ILPProblemBuilder:
 
         Args:
             """
+
+        rules, rule_predicates = [], []
+        if self.predicate_set in ["chebi_fg_rules", "chebi_fg_learned_rules"]:
+            prolog_lines_rules, body_predicates_rules = build_background_chebi_fg_rules(CHEBI_FG_RULES_PATH if self.predicate_set == "chebi_fg_rules" else CHEBI_FG_LEARNED_RULES_PATH)
+            rules = prolog_lines_rules
+            rule_predicates = body_predicates_rules
         
         for target_id in tqdm.tqdm(target_ids, desc="Building background knowledge for ChEBI classes"):
+            print(f"Building background knowledge for ChEBI:{target_id}...")
+            selected_ids_by_split = dict()
+            prolog_lines_by_split = dict()
+            body_predicates = set()
             for split in ["train", "validation", "test"]:
                 exs_path = get_exs_path(target_id, base_dir=self.problem_dir, split=split)
                 bk_path = get_bk_path(target_id, base_dir=self.problem_dir, predicate_set=self.predicate_set, split=split)
@@ -129,36 +157,57 @@ class ILPProblemBuilder:
                     # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
                     selected_ids = [line.strip().split("(")[-1].split(")")[0] for line in f.readlines() if line.strip() and not line.startswith("%")]
                 selected_rows = self.samples_df[[str(id) in selected_ids for id in self.samples_df.index]]
+                selected_ids_by_split[split] = selected_ids
+
                 # standard bk is always added
-                prolog_lines, body_predicates = build_background_muggleton(selected_rows) if self.muggleton else build_background_chemlog(selected_rows)
+                prolog_lines = []
+                prolog_lines_atoms, body_predicates_atoms = build_background_muggleton(selected_rows) if self.muggleton else build_background_chemlog(selected_rows)
+                prolog_lines += prolog_lines_atoms
+                body_predicates.update(body_predicates_atoms)
                 if self.predicate_set in ["chembl_fgs", "chebi_fgs"]:
                     # add fgs as samples
                     prolog_lines_fgs, body_predicates_fgs = build_background_fg_data(self.chebi_data, selected_rows, source=self.predicate_set)
                     prolog_lines += prolog_lines_fgs
-                    body_predicates += body_predicates_fgs
-                if self.predicate_set == "chebi_fg_rules":
-                    prolog_lines_fgs, body_predicates_fgs = build_background_chebi_fg_rules()
-                    prolog_lines += prolog_lines_fgs
-                    body_predicates += body_predicates_fgs
+                    body_predicates.update(body_predicates_fgs)
+                prolog_lines_by_split[split] = prolog_lines
+                
+            # for evaluating rules, merge alls splits, separate results afterwards
+            if self.predicate_set in ["chebi_fg_rules", "chebi_fg_learned_rules"]:
+                all_selected_ids = [id for split in ["train", "validation", "test"] for id in selected_ids_by_split[split]]
+                all_prolog_lines = [line for split in ["train", "validation", "test"] for line in prolog_lines_by_split[split]]
+                positives = evaluate_with_clingo(rules, all_prolog_lines, rule_predicates, all_selected_ids, list(body_predicates))
+                for positive_extension in positives:
+                    pred = positive_extension
+                    in_split = {"train": False, "validation": False, "test": False}
+                    for example in positives[positive_extension]:
+                        for split in ["train", "validation", "test"]:
+                            if example in selected_ids_by_split[split]:
+                                if not in_split[split]:
+                                    body_predicates.add((pred, 1))
+                                    in_split[split] = True
+                                prolog_lines_by_split[split].append(f"{pred}({example}).")
 
+            for split in ["train", "validation", "test"]:
+                prolog_lines = prolog_lines_by_split[split]
+                
                 with open(bk_path, "w+") as f:
                     f.write("\n".join(prolog_lines) + "\n")
 
-                # create bias file template based on bk predicates
-                plain_bias_path = get_bias_path(target_id, split=split, base_dir=self.problem_dir, predicate_set=self.predicate_set) # bias file path for settings-specific bias file (created in build_bias)
-                bias_lines = [
-                    f"%% CHEBI:{target_id} (bias file without settings)",
-                    f"",
-                    f"%% max_vars(TODO).",
-                    f"%% max_body(TODO).",
-                    f"%% max_clauses(TODO).",
-                    f"",
-                    f"head_pred(chebi_{target_id}, 1)."] + [
-                    f"body_pred({pred},{arity})." for pred, arity in body_predicates
-                ]
-                # bias without settings (as template)
-                with open(plain_bias_path, "w+") as f:
-                    f.write("\n".join(bias_lines) + "\n")
+            # create bias file template based on bk predicates
+            plain_bias_path = get_bias_path(target_id, split="train", base_dir=self.problem_dir, predicate_set=self.predicate_set) # bias file path for settings-specific bias file (created in build_bias)
+            bias_lines = [
+                f"%% CHEBI:{target_id} (bias file without settings)",
+                f"",
+                f"%% max_vars(TODO).",
+                f"%% max_body(TODO).",
+                f"%% max_clauses(TODO).",
+                f"",
+                f"head_pred(chebi_{target_id}, 1)."] + [
+                f"body_pred({pred},{arity})." for pred, arity in body_predicates
+            ]
+            # bias without settings (as template)
+            with open(plain_bias_path, "w+") as f:
+                f.write("\n".join(bias_lines) + "\n")
                     
     
     def build_bias(self, target_ids, selection_mode:Literal["claude", "random", "top_k"]|None=None, selection_k:int|None=None):
@@ -182,8 +231,8 @@ class ILPProblemBuilder:
                 f.write(bias_content)
 
 
-    def get_closest_negatives(self, samples: pd.DataFrame, target_id, min_samples=25, max_samples=600):
-        # goal: reach min_samples, but continue collecting samples until max_samples if they are siblings
+    def get_closest_negatives(self, samples: pd.DataFrame, target_id, min_samples=25, max_samples=None):
+        # goal: reach min_samples, but continue collecting samples (until max_samples) if they are siblings
         import queue 
         q = queue.Queue()
         q.put(int(target_id))
@@ -200,7 +249,7 @@ class ILPProblemBuilder:
                     for neighbor_sub in self.hierarchy_graph.successors(neighbor):
                         if str(neighbor_sub) in samples_index:
                             selected.add(str(neighbor_sub))
-                        if len(selected) >= max_samples or (len(selected) >= min_samples and not siblings):
+                        if (max_samples and len(selected) >= max_samples) or (len(selected) >= min_samples and not siblings):
                             return self.samples_df.loc[[str(id) in selected for id in self.samples_df.index]]
             
             if len(selected) >= min_samples:
@@ -211,26 +260,30 @@ class ILPProblemBuilder:
 
 
     def gather_samples_for_chebi_cls(self, target_id, min_pos_samples=25, max_pos_samples=200, min_neg_samples=25, max_neg_samples=200):
-        # takes all samples that are positive / negative, creates .6/.2/.2 train/val/test split (up to max_pos_samples and max_neg_samples total) 
         descendants = list(self.hierarchy_graph.successors(int(target_id)))
         # not all descendants are molecules (i.e., have a SMILES annotation) -> only take the ones that are in the samples_df (i.e. have a SMILES annotation and are in the 3_STAR subset)
 
         df_pos = self.samples_df[[id in descendants for id in self.samples_df.index]]
         df_neg = self.samples_df[[id not in df_pos.index for id in self.samples_df.index]]
-        df_pos = df_pos.sample(min(max_pos_samples, len(df_pos)), random_state=42) # if there are more positives than max_pos_samples, sample randomly
-        df_neg = self.get_closest_negatives(df_neg, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples) # return all negatives (that are direct neighbors)
         assert len(df_pos) >= min_pos_samples, f"ChEBI class {target_id} does not have enough positive samples (found {len(df_pos)}, required are at least {min_pos_samples}). Got samples {df_pos.index.tolist()}"
         assert len(df_neg) >= min_neg_samples, f"ChEBI class {target_id} does not have enough negative samples (found {len(df_neg)}, required are at least {min_neg_samples}). Got samples {df_neg.index.tolist()}"
         
-        # sample 60/20/20 for train/validation/test splits (but only max_pos_samples and max_neg_samples per split)
         samples_by_split = dict()
         for posneg in ["pos", "neg"]:
             df = df_pos if posneg == "pos" else df_neg
-            samples_by_split[(posneg, "train")] = df.sample(frac=0.6, random_state=42)
-            pos_val_test = df[~df.index.isin(samples_by_split[(posneg, "train")].index)]
-            samples_by_split[(posneg, "validation")] = pos_val_test.sample(frac=0.5, random_state=42)
-            samples_by_split[(posneg, "test")] = pos_val_test[~pos_val_test.index.isin(samples_by_split[(posneg, "validation")].index)]
-
+            df_index = df.index.astype(str)
+            train_samples = df[df_index.isin(self.train_ids)]
+            val_samples = df[df_index.isin(self.validation_ids)]
+            test_samples = df[df_index.isin(self.test_ids)]
+            if posneg == "pos":
+                samples_by_split[(posneg, "train")] = train_samples.sample(min(max_pos_samples, len(train_samples)), random_state=42) # if there are more positives than max_pos_samples, sample randomly
+                samples_by_split[(posneg, "validation")] = val_samples.sample(min(max_pos_samples, len(val_samples)), random_state=42)
+                samples_by_split[(posneg, "test")] = test_samples.sample(min(max_pos_samples, len(test_samples)), random_state=42)            
+            else:
+                samples_by_split[(posneg, "train")] = self.get_closest_negatives(train_samples, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples) # return up to max_neg_samples negatives (that are direct neighbors)
+                samples_by_split[(posneg, "validation")] = self.get_closest_negatives(val_samples, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples)
+                samples_by_split[(posneg, "test")] = self.get_closest_negatives(test_samples, target_id, min_samples=min_neg_samples, max_samples=max_neg_samples)
+            
         for (posneg, split), df in samples_by_split.items():
             exs_path = get_exs_path(target_id, base_dir=self.problem_dir, split=split)
             with open(exs_path, "w+" if posneg == "pos" else "a") as f:
@@ -310,7 +363,7 @@ def build_background_chebi_fg_rules(rules_path=None):
             pred_name = line.split("(")[0].strip()
             if pred_name and pred_name not in seen_predicates:
                 seen_predicates.add(pred_name)
-                body_predicates.append((pred_name, 1))
+                body_predicates.append(pred_name)
     
     print(f"Loaded {len(body_predicates)} ChEBI FG rule predicates from {rules_path}")
     return prolog_lines, body_predicates
