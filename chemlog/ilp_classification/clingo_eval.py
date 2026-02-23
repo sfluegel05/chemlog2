@@ -56,7 +56,10 @@ def run_ilp_validation_clingo(chebi_id: str, prog_str: str, exs_file: str, bk_fi
                 target_labels.add(head.split("(")[0].strip())
     
     positives = evaluate_with_clingo(prog_str.split("\n"), background_facts, list(target_labels), examples_ids)
-    positives = [ex for ex in examples_ids if ex in positives[f"chebi_{chebi_id}"]]
+    if f"chebi_{chebi_id}" not in positives:
+        positives = []
+    else:
+        positives = [ex for ex in examples_ids if ex in positives[f"chebi_{chebi_id}"]]
     tps, fps, tns, fns = 0, 0, 0, 0
     for ex_id, posneg in zip(examples_ids, examples_posneg):
         if ex_id in positives:
