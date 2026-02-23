@@ -152,7 +152,6 @@ class ILPProblemBuilder:
             body_predicates = set()
             for split in ["train", "validation", "test"]:
                 exs_path = get_exs_path(target_id, base_dir=self.problem_dir, split=split)
-                bk_path = get_bk_path(target_id, base_dir=self.problem_dir, predicate_set=self.predicate_set, split=split)
                 with open(exs_path, "r") as f:
                     # for each line get id between inner parentheses (e.g. pos(chebi_123(456)). -> 456) and select corresponding rows from samples_df
                     selected_ids = [line.strip().split("(")[-1].split(")")[0] for line in f.readlines() if line.strip() and not line.startswith("%")]
@@ -189,7 +188,8 @@ class ILPProblemBuilder:
 
             for split in ["train", "validation", "test"]:
                 prolog_lines = prolog_lines_by_split[split]
-                
+                bk_path = get_bk_path(target_id, base_dir=self.problem_dir, predicate_set=self.predicate_set, split=split)
+
                 with open(bk_path, "w+") as f:
                     f.write("\n".join(prolog_lines) + "\n")
 
