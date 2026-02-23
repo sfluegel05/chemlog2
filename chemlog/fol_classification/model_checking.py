@@ -148,6 +148,14 @@ class ModelChecker(AbstractModelChecker):
             literal = literal.formula
         if isinstance(literal, logic.PredicateExpression):
             if literal.predicate in self.extensions:
+                if len(tuple(literal.arguments)) > (
+                    len(self.extensions[literal.predicate]) - 1
+                ):
+                    raise ValueError(
+                        f"Predicate `{literal.predicate}` is defined with arity"
+                        f" {len(self.extensions[literal.predicate]) - 1} but called with"
+                        f" {len(literal.arguments)} arguments"
+                    )
                 if len(literal.arguments) > 1:
                     res = self.extensions[literal.predicate][tuple(literal.arguments)]
                 elif len(literal.arguments) == 1:
@@ -155,6 +163,15 @@ class ModelChecker(AbstractModelChecker):
                 else:
                     res = self.extensions[literal.predicate]
             elif literal.predicate in self.definitions:
+                if len(tuple(literal.arguments)) > (
+                    len(self.calculated_extensions[literal.predicate]) - 1
+                ):
+                    raise ValueError(
+                        f"Predicate `{literal.predicate}` is defined with arity"
+                        f" {len(self.calculated_extensions[literal.predicate]) - 1} but called with"
+                        f" {len(literal.arguments)} arguments"
+                    )
+
                 if np.isnan(
                         self.calculated_extensions[literal.predicate][
                             tuple(literal.arguments)
