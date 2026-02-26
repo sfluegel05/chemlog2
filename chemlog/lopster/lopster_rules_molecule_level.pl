@@ -177,9 +177,9 @@ saturated(X) :- molecule(X), hasAtom(X,Y1), c(Y1), not unsaturated(X).
 % organophosphorus molecules (direct C-P bond)
 organophosphorus(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), p(Y2), bond(Y1,Y2), bond(Y2,Y1).
 % ester extension (new): C-O-P linkage
-organophosphorusCompound(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), p(Y3), bond(Y1,Y2), bond(Y2,Y1), bond(Y2,Y3), bond(Y3,Y2).
+organophosphorus(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), o(Y2), hasAtom(X,Y3), p(Y3), bond(Y1,Y2), bond(Y2,Y1), bond(Y2,Y3), bond(Y3,Y2).
 % thioester extension (new): C-S-P linkage
-organophosphorusCompound(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), s(Y2), hasAtom(X,Y3), p(Y3), bond(Y1,Y2), bond(Y2,Y1), bond(Y2,Y3), bond(Y3,Y2).
+organophosphorus(X) :- molecule(X), hasAtom(X,Y1), c(Y1), hasAtom(X,Y2), s(Y2), hasAtom(X,Y3), p(Y3), bond(Y1,Y2), bond(Y2,Y1), bond(Y2,Y3), bond(Y3,Y2).
 
 % alkane molecules
 alkane(X) :- saturated(X), hydroCarbon(X), not cyclic(X).
