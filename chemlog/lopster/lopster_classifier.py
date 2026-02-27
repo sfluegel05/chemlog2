@@ -35,18 +35,18 @@ lopster_chebi_mapping = {
     "inorganic": "24835",
     "hydroCarbon": "24632",
     "haloHydroCarbon": "24472",
-    "polyatomic": "36357",
+    #"polyatomic": "36357", # suspended for now (pending further verification)
     "monoatomic": "33238",
     "carboxylicAcid": "33575",
     "carboxylicEster": "33308",
-    "amine": "32952",
-    "aldehyde": "17478",
+    #"amine": "32952", # suspended for now (pending further verification)
+    #"aldehyde": "17478", # suspended for now (pending further verification)
     "cyclic": "33595",
     "ketone": "17087",
     "organophosphorus": "25710",
     "alkane": "18310",
     "haloAlkane": "24469",
-    "heteroOrganic": "33285",
+    #"heteroOrganic": "33285", # suspended for now (pending further verification)
     # new
     "livermoriumMolEntity": "194538",
     "moscoviumMolEntity": "194536",
@@ -161,7 +161,5 @@ class LopsterClingoClassifier(LopsterClassifier):
 
 if __name__ == "__main__":
     from rdkit import Chem
-    mol = Chem.MolFromSmiles("NC(CC(=O)O)C(=O)O") # aspartic acid
-    mol = Chem.MolFromSmiles(r"OC(CC[NH+]1CCCCC1)(c1ccccc1)C1CC2C=CC1C2.[Cl-]")
-    #print(LopsterClassifier().classify(mol))
+    mol = Chem.MolFromSmiles("CCN(CC)c1ccc2nc3c(cc(N)c4ccccc43)[o+]c2c1")
     print(LopsterClingoClassifier().classify([mol], verbose=True))
