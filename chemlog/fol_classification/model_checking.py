@@ -154,6 +154,12 @@ class ModelChecker(AbstractModelChecker):
                     res = self.extensions[literal.predicate][literal.arguments[0]]
                 else:
                     res = self.extensions[literal.predicate]
+                    # For 0-ary predicates, the extension may be a numpy array (e.g. when
+                    # the predicate was originally defined as n-ary but is used without
+                    # arguments). Extract a scalar bool using any() so that the result can
+                    # be used safely in boolean contexts.
+                    if isinstance(res, np.ndarray):
+                        res = bool(res.any())
             elif literal.predicate in self.definitions:
                 if np.isnan(
                         self.calculated_extensions[literal.predicate][
