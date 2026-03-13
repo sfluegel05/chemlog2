@@ -6,7 +6,8 @@ import os
 
 from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_fragments, apply_variable_assignment
-from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.fol_classification.fast_model_checking import FastModelChecker as ModelChecker
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 
 
 class ChargeVerifier(Classifier):
