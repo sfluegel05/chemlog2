@@ -25,7 +25,19 @@ dependencies = [
     "clingo",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
 [tool.setuptools.packages.find]
 
 [tool.setuptools.package-data]
 chemlog = ["**/*.pl"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
