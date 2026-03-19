@@ -25,6 +25,8 @@ from chemlog.fol_classification.charge_verifier import ChargeVerifier
 from chemlog.fol_classification.functional_groups_verifier import FunctionalGroupsVerifier
 from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 from chemlog.fol_classification.peptide_size_verifier import PeptideSizeVerifier, FOLPeptideSizeClassifierTranslated
+from chemlog.fol_classification.model_checking import ModelChecker
+from chemlog.fol_classification.fast_model_checking import FastModelChecker
 from chemlog.fol_classification.proteinogenics_verifier import ProteinogenicsVerifier
 from chemlog.fol_classification.substruct_verifier import SubstructVerifier
 from chemlog.mona_classification.peptide_size_mona import MonaPeptideSizeClassifier, MonaPeptideSizeClassifierCompiled
@@ -257,14 +259,16 @@ CLASSIFIERS = {
 @click.option('--n-molecules', '-l', type=int, default=-1, help='End after this many molecules')
 @click.option('--n-workers', '-w', type=int, default=mp.cpu_count(),
               help='Number of worker processes to use (defaults to number of CPU cores), use 0 for no multiprocessing')
+@click.option('--model-checker', type=click.Choice(['fast', 'standard'], case_sensitive=False), default='fast',
+              help='Model checker to use for fol-translated strategy (fast=FastModelChecker, standard=ModelChecker)')
 def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, only_peptides, only_3star, begin_molecule,
-                   n_molecules, n_workers):
+                   n_molecules, n_workers, model_checker):
     json_logger = TimestampedLogger(None, f"{strategy}_{run_name}" if run_name is not None else strategy, debug_mode)
     json_logger.start_run(f"classify_{strategy}", {"chebi_version": chebi_version, "molecules": molecules,
                                                    "run_name": run_name, "debug_mode": debug_mode,
                                                    "only_peptides": only_peptides,
                                                    "begin_molecule": begin_molecule, "n_molecules": n_molecules,
-                                                   "n_workers": n_workers})
+                                                   "n_workers": n_workers, "model_checker": model_checker})
 
     data_filtered = _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides)
     data_filtered = data_filtered[begin_molecule:]
@@ -272,9 +276,16 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
         data_filtered = data_filtered[:n_molecules]
     logging.info(f"Classifying {len(data_filtered)} molecules")
 
-    classifier_instances = {
-        k: v() for k, v in CLASSIFIERS[strategy].items()
-    }
+    # Select model checker based on user choice
+    selected_model_checker = FastModelChecker if model_checker == 'fast' else ModelChecker
+    
+    classifier_instances = {}
+    for k, v in CLASSIFIERS[strategy].items():
+        # Pass model_checker_class to classifiers that support it
+        if k == ClassifierKeys.SIZE and strategy == 'fol-translated':
+            classifier_instances[k] = v(model_checker_class=selected_model_checker)
+        else:
+            classifier_instances[k] = v()
     # no multiprocessing
     if n_workers == 0:
         logging.info("Running in single-threaded mode")
