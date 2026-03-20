@@ -8,10 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from gavel.logic import logic
-from gavel.logic.logic_utils import (
-    get_vars_in_formula,
-    substitute_var_in_formula
-)
+from gavel.logic.logic_utils import get_vars_in_formula, substitute_var_in_formula
 
 
 def _ensure_bool(func):
@@ -342,7 +339,7 @@ class ModelChecker(AbstractModelChecker):
                     expected_arity == 1 and len(tuple(literal.arguments)) == 0
                 )
                 if expected_arity is not None and len(tuple(literal.arguments)) != expected_arity and not allow_global_shortcut:
-                    raise ValueError(
+                    raise ModelCheckerInputError(
                         f"Predicate `{literal.predicate}` is defined with arity"
                         f" {expected_arity} but called with"
                         f" {len(literal.arguments)} arguments"
@@ -357,7 +354,7 @@ class ModelChecker(AbstractModelChecker):
             elif literal.predicate in self.definitions:
                 expected_arity = self._predicate_arity(literal.predicate)
                 if expected_arity is not None and len(tuple(literal.arguments)) != expected_arity:
-                    raise ValueError(
+                    raise ModelCheckerInputError(
                         f"Predicate `{literal.predicate}` is defined with arity"
                         f" {expected_arity} but called with"
                         f" {len(literal.arguments)} arguments"

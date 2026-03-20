@@ -4,7 +4,11 @@ from gavel.logic import logic
 from rdkit import Chem
 
 from chemlog.fol_classification.fol_utils import normalize_fol_formula
-from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.fol_classification.model_checking import (
+    ModelChecker,
+    ModelCheckerInputError,
+    ModelCheckerOutcome,
+)
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
 
 
@@ -35,7 +39,7 @@ def test_when_predicate_is_used_as_constant(checker: "ModelCheckerTestWrapper"):
     )
 
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match=r"Predicate 'c' is being used as a constant in the formula\.\s*"
         r"Please check the formula and ensure that predicates are not used as constants\.",
     ):
@@ -52,7 +56,7 @@ def test_raise_missing_predicate_exception(checker: "ModelCheckerTestWrapper"):
     )
 
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match="Predicate 'oneCarbonCompound' is not defined",
     ):
         checker.check_formula_for_molecule(formula_str, ethanol)
@@ -63,7 +67,7 @@ def test_raise_missing_predicate_exception(checker: "ModelCheckerTestWrapper"):
     )
 
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match="Predicates 'oneCarbonCompound' and 'twoPlusCarbonCompound' are not defined",
     ):
         checker.check_formula_for_molecule(formula_str, ethanol)
@@ -88,7 +92,7 @@ def test_predicate_arity_exception(checker: "ModelCheckerTestWrapper"):
     mol = Chem.MolFromSmiles("C")
 
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match=r"(?s).*Predicate `ptest` is defined with arity 0 but called with 1 arguments.*"
         r"Predicate `qtest` is defined with arity 1 but called with 2 arguments.*"
         r"Predicate `rtest` is defined with arity 2 but called with 3 arguments.*",
@@ -98,7 +102,7 @@ def test_predicate_arity_exception(checker: "ModelCheckerTestWrapper"):
     formula_str = "test_pred(X) <=> (ptest & qtest & rtest & rtest(X))"
 
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match=r"(?s).*Predicate `qtest` is defined with arity 1 but called with 0 arguments.*"
         r"Predicate `rtest` is defined with arity 2 but called with 0 arguments.*"
         r"Predicate `rtest` is defined with arity 2 but called with 1 arguments.*",
@@ -122,7 +126,7 @@ def test_predicate_arity_mismatch(checker: "ModelCheckerTestWrapper"):
     }
     checker.add_background_definitions(add_defs_dict)
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match=r"Variable 'X' in predicate 'terpeneGlycoside' is not bound at evaluation time",
     ):
         checker.check_formula_for_molecule(formula_str, molecule)
@@ -148,7 +152,7 @@ def test_unknown_index_error(checker: "ModelCheckerTestWrapper"):
     }
     checker.add_background_definitions(add_def_dict)
     with pytest.raises(
-        Exception,
+        ModelCheckerInputError,
         match=r"Variable 'Y' is used in the definition of predicate 'steroidPosition3' "
         r"but is not bound by predicate arguments or quantifiers",
     ):
