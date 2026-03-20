@@ -36,8 +36,8 @@ def test_when_predicate_is_used_as_constant(checker: "ModelCheckerTestWrapper"):
 
     with pytest.raises(
         Exception,
-        match="Predicate 'c' is being used as a constant in the formula."
-        "Please check the formula and ensure that predicates are not used as constants.",
+        match=r"Predicate 'c' is being used as a constant in the formula\.\s*"
+        r"Please check the formula and ensure that predicates are not used as constants\.",
     ):
         checker.check_formula_for_molecule(formula_str, molecule)
 
@@ -89,9 +89,9 @@ def test_predicate_arity_exception(checker: "ModelCheckerTestWrapper"):
 
     with pytest.raises(
         Exception,
-        match="Predicate `ptest` is defined with arity 0 but called with 1 arguments"
-        "Predicate `qtest` is defined with arity 1 but called with 2 arguments"
-        "Predicate `rtest` is defined with arity 2 but called with 3 arguments",
+        match=r"(?s).*Predicate `ptest` is defined with arity 0 but called with 1 arguments.*"
+        r"Predicate `qtest` is defined with arity 1 but called with 2 arguments.*"
+        r"Predicate `rtest` is defined with arity 2 but called with 3 arguments.*",
     ):
         checker.check_formula_for_molecule(formula_str, mol)
 
@@ -99,9 +99,9 @@ def test_predicate_arity_exception(checker: "ModelCheckerTestWrapper"):
 
     with pytest.raises(
         Exception,
-        match="Predicate `qtest` is defined with arity 1 but called with 0 arguments"
-        "Predicate `rtest` is defined with arity 2 but called with 0 arguments"
-        "Predicate `rtest` is defined with arity 2 but called with 1 arguments",
+        match=r"(?s).*Predicate `qtest` is defined with arity 1 but called with 0 arguments.*"
+        r"Predicate `rtest` is defined with arity 2 but called with 0 arguments.*"
+        r"Predicate `rtest` is defined with arity 2 but called with 1 arguments.*",
     ):
         checker.check_formula_for_molecule(formula_str, mol)
 
@@ -121,13 +121,11 @@ def test_predicate_arity_mismatch(checker: "ModelCheckerTestWrapper"):
         # "triterpenoid": "triterpenoid <=> (terpenoid & ?[A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15]: (c(A1) & c(A2) & c(A3) & c(A4) & c(A5) & c(A6) & c(A7) & c(A8) & c(A9) & c(A10) & c(A11) & c(A12) & c(A13) & c(A14) & c(A15) & has_bond_to(A1, A2) & has_bond_to(A2, A3) & has_bond_to(A3, A4) & has_bond_to(A4, A5) & has_bond_to(A5, A6) & has_bond_to(A6, A7) & has_bond_to(A7, A8) & has_bond_to(A8, A9) & has_bond_to(A9, A10) & has_bond_to(A10, A11) & has_bond_to(A11, A12) & has_bond_to(A12, A13) & has_bond_to(A13, A14) & has_bond_to(A14, A15) & A1 != A2 & A1 != A3 & A1 != A4 & A1 != A5 & A1 != A6 & A1 != A7 & A1 != A8 & A1 != A9 & A1 != A10 & A1 != A11 & A1 != A12 & A1 != A13 & A1 != A14 & A1 != A15 & A2 != A3 & A2 != A4 & A2 != A5 & A2 != A6 & A2 != A7 & A2 != A8 & A2 != A9 & A2 != A10 & A2 != A11 & A2 != A12 & A2 != A13 & A2 != A14 & A2 != A15 & A3 != A4 & A3 != A5 & A3 != A6 & A3 != A7 & A3 != A8 & A3 != A9 & A3 != A10 & A3 != A11 & A3 != A12 & A3 != A13 & A3 != A14 & A3 != A15 & A4 != A5 & A4 != A6 & A4 != A7 & A4 != A8 & A4 != A9 & A4 != A10 & A4 != A11 & A4 != A12 & A4 != A13 & A4 != A14 & A4 != A15 & A5 != A6 & A5 != A7 & A5 != A8 & A5 != A9 & A5 != A10 & A5 != A11 & A5 != A12 & A5 != A13 & A5 != A14 & A5 != A15 & A6 != A7 & A6 != A8 & A6 != A9 & A6 != A10 & A6 != A11 & A6 != A12 & A6 != A13 & A6 != A14 & A6 != A15 & A7 != A8 & A7 != A9 & A7 != A10 & A7 != A11 & A7 != A12 & A7 != A13 & A7 != A14 & A7 != A15 & A8 != A9 & A8 != A10 & A8 != A11 & A8 != A12 & A8 != A13 & A8 != A14 & A8 != A15 & A9 != A10 & A9 != A11 & A9 != A12 & A9 != A13 & A9 != A14 & A9 != A15 & A10 != A11 & A10 != A12 & A10 != A13 & A10 != A14 & A10 != A15 & A11 != A12 & A11 != A13 & A11 != A14 & A11 != A15 & A12 != A13 & A12 != A14 & A12 != A15 & A13 != A14 & A13 != A15 & A14 != A15))",
     }
     checker.add_background_definitions(add_defs_dict)
-    checker.check_formula_for_molecule(formula_str, molecule)
-
-    # with pytest.raises(
-    #     Exception,
-    #     match=None,
-    # ):
-    #     checker.check_formula_for_molecule(formula_str, molecule)
+    with pytest.raises(
+        Exception,
+        match=r"Variable 'X' in predicate 'terpeneGlycoside' is not bound at evaluation time",
+    ):
+        checker.check_formula_for_molecule(formula_str, molecule)
 
 
 def test_unknown_index_error(checker: "ModelCheckerTestWrapper"):
@@ -149,7 +147,12 @@ def test_unknown_index_error(checker: "ModelCheckerTestWrapper"):
         "steroid": "steroid <=> (molecule & ?[A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17]: (c(A1) & c(A2) & c(A3) & c(A4) & c(A5) & c(A6) & c(A7) & c(A8) & c(A9) & c(A10) & c(A11) & c(A12) & c(A13) & c(A14) & c(A15) & c(A16) & c(A17) & has_bond_to(A1, A2) & has_bond_to(A2, A3) & has_bond_to(A3, A4) & has_bond_to(A4, A5) & has_bond_to(A5, A10) & has_bond_to(A10, A1) & has_bond_to(A5, A6) & has_bond_to(A6, A7) & has_bond_to(A7, A8) & has_bond_to(A8, A9) & has_bond_to(A9, A10) & has_bond_to(A8, A14) & has_bond_to(A14, A15) & has_bond_to(A15, A16) & has_bond_to(A16, A17) & has_bond_to(A17, A13) & has_bond_to(A13, A14) & has_bond_to(A9, A11) & has_bond_to(A11, A12) & has_bond_to(A12, A13)))",
     }
     checker.add_background_definitions(add_def_dict)
-    checker.check_formula_for_molecule(formula_str, molecule)
+    with pytest.raises(
+        Exception,
+        match=r"Variable 'Y' is used in the definition of predicate 'steroidPosition3' "
+        r"but is not bound by predicate arguments or quantifiers",
+    ):
+        checker.check_formula_for_molecule(formula_str, molecule)
 
 
 def test_model_check_success(checker: "ModelCheckerTestWrapper"):
@@ -184,8 +187,12 @@ class ModelCheckerTestWrapper:
         return pred_variables, normalize_fol_formula(tptp_parsed.right)
 
     def add_background_definitions(self, def_dict: dict[str, str]):
-        for pred_name, def_str in def_dict.items():
-            vars, normalized_formula = self.parse_formula(def_str)
+        for _, def_str in def_dict.items():
+            formula_wrapped = f"fof(temp, axiom, {def_str})."
+            tptp_parsed = self.parser.parse(formula_wrapped)[0].formula
+            pred_name = str(tptp_parsed.left.predicate)
+            vars = self._extract_predicate_variables(tptp_parsed.left)
+            normalized_formula = normalize_fol_formula(tptp_parsed.right)
             self._background_definitions[pred_name] = (vars, normalized_formula)
 
     def check_formula_for_molecule(self, formula_str: str, molecule: Chem.Mol) -> bool:
