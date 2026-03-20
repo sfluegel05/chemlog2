@@ -2,14 +2,16 @@ import itertools
 import logging
 import queue
 import time
-from copy import deepcopy
 from enum import Enum
 from functools import wraps
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from gavel.logic import logic
-from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula, convert_to_nnf, convert_to_cnf
+from gavel.logic.logic_utils import (
+    get_vars_in_formula,
+    substitute_var_in_formula
+)
 
 
 def _ensure_bool(func):
@@ -150,12 +152,6 @@ class ModelChecker(AbstractModelChecker):
             return len(self.definitions[predicate_name][0])
         return None
 
-    @staticmethod
-    def _variable_name(variable: logic.Variable) -> str:
-        if hasattr(variable, "symbol"):
-            return str(variable.symbol)
-        return str(variable)
-
     def _validate_literal_arguments(self, literal: logic.PredicateExpression) -> Tuple[int, ...]:
         validated_arguments = []
         for argument in literal.arguments:
@@ -175,7 +171,7 @@ class ModelChecker(AbstractModelChecker):
                 )
             if isinstance(argument, logic.Variable):
                 raise ModelCheckerInputError(
-                    f"Variable '{self._variable_name(argument)}' in predicate '{literal.predicate}' is not bound "
+                    f"Variable '{argument}' in predicate '{literal.predicate}' is not bound "
                     f"at evaluation time. Please add a quantifier or include it in the predicate definition head."
                 )
             raise ModelCheckerInputError(
@@ -229,14 +225,14 @@ class ModelChecker(AbstractModelChecker):
                         if constant_name in known_predicates:
                             predicate_constants.add(constant_name)
                     elif isinstance(argument, logic.Variable) and definition_name is not None:
-                        variable_name = self._variable_name(argument)
+                        variable_name = str(argument)
                         if variable_name not in bound_variables and predicate_name in known_predicates:
                             unbound_definition_variables.add((variable_name, definition_name))
                 return
 
             if isinstance(expr, logic.QuantifiedFormula):
                 quantifier_bound_vars = set(bound_variables)
-                quantifier_bound_vars.update(self._variable_name(v) for v in expr.variables)
+                quantifier_bound_vars.update(str(v) for v in expr.variables)
                 walk_predicates(expr.formula, quantifier_bound_vars, definition_name)
                 return
 
@@ -267,7 +263,7 @@ class ModelChecker(AbstractModelChecker):
                 continue
             visited_definitions.add(predicate_name)
             definition_vars, definition_formula = self.definitions[predicate_name]
-            bound_vars = {self._variable_name(v) for v in definition_vars}
+            bound_vars = {str(v) for v in definition_vars}
             walk_predicates(definition_formula, bound_vars, predicate_name)
 
             for predicate_expr in get_predicate_expressions(definition_formula):
