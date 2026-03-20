@@ -171,6 +171,55 @@ def test_model_check_success(checker: "ModelCheckerTestWrapper"):
     assert checker.check_formula_for_molecule(formula_str, thionitrousAcid) is False
 
 
+def test_model_check_success_absent_predicate_in_spectrum(
+    checker: "ModelCheckerTestWrapper",
+):
+    ethanol = Chem.MolFromSmiles("CCO")
+    thionitrous_acid = Chem.MolFromSmiles("SN=O")
+
+    # Edge case: some molecules do not have sulfur atoms. The model checker should
+    # treat missing unary extensions as False instead of raising.
+    formula_str = "containsSulfur <=> ?[A1]: s(A1)"
+
+    assert checker.check_formula_for_molecule(formula_str, ethanol) is False
+    assert checker.check_formula_for_molecule(formula_str, thionitrous_acid) is True
+
+
+def test_model_check_success_global_charge_shortcut(
+    checker: "ModelCheckerTestWrapper",
+):
+    ethanol = Chem.MolFromSmiles("CCO")
+    ammonium = Chem.MolFromSmiles("[NH4+]")
+
+    neutral_formula = "neutralMolecule <=> net_charge_neutral"
+    cation_formula = "cationicMolecule <=> net_charge_positive"
+
+    # Edge case: allow 0-arity use of global charge predicates.
+    assert checker.check_formula_for_molecule(neutral_formula, ethanol) is True
+    assert checker.check_formula_for_molecule(neutral_formula, ammonium) is False
+    assert checker.check_formula_for_molecule(cation_formula, ammonium) is True
+    assert checker.check_formula_for_molecule(cation_formula, ethanol) is False
+
+
+def test_model_check_success_transitive_background_definitions(
+    checker: "ModelCheckerTestWrapper",
+):
+    ethanol = Chem.MolFromSmiles("CCO")
+    methane = Chem.MolFromSmiles("C")
+
+    formula_str = "target <=> oxygenCompound"
+    add_def_dict = {
+        "oxygenCompound": "oxygenCompound <=> hasOxygen",
+        "hasOxygen": "hasOxygen <=> ?[X]: o(X)",
+    }
+    checker.add_background_definitions(add_def_dict)
+
+    # Spectrum test: same chained definition should distinguish oxygen-containing
+    # and oxygen-free molecules.
+    assert checker.check_formula_for_molecule(formula_str, ethanol) is True
+    assert checker.check_formula_for_molecule(formula_str, methane) is False
+
+
 class ModelCheckerTestWrapper:
     def __init__(self) -> None:
         self.parser = TPTPParser()
