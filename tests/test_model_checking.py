@@ -142,7 +142,6 @@ def test_unknown_index_error(checker: "ModelCheckerTestWrapper"):
         "bDOUBLE(A1, A2) & steroidPosition3(A1)))"
     )
 
-    # when steriod is commented out, the raised error has something to do with steroid
     add_def_dict = {
         "oxoSteroid": "oxoSteroid <=> (steroid & hasCarbonylGroup)",
         "steroidPosition3": "steroidPosition3(X) <=> (c(X) & inRing(X) & has_0_hs(X) & bDOUBLE(X, Y) & o(Y) & ?[A1, A2]: (c(A1) & c(A2) & bSINGLE(X, A1) & bSINGLE(X, A2) & inRing(A1) & inRing(A2) & A1 != A2))",
@@ -222,6 +221,34 @@ def test_model_check_success_transitive_background_definitions(
     # and oxygen-free molecules.
     assert checker.check_formula_for_molecule(formula_str, ethanol) is True
     assert checker.check_formula_for_molecule(formula_str, methane) is False
+
+
+def test_model_checking_additional_examples(checker: "ModelCheckerTestWrapper"):
+    # https://github.com/sfluegel05/chemlog-peptides/pull/12
+    formula_str = "cation <=> net_charge_positive"
+
+    mol = Chem.MolFromSmiles("C(=O)(C1=CC=C(C=C1F)OCCCCCC[NH+](CC=C)C)C=2C=CC(=CC2)Br")
+
+    checker.check_formula_for_molecule(formula_str, mol)
+
+    formula_str = (
+        "glycolipid <=> (glycerolipid & ?[O1, C1, O2, C2]: (o(O1) & "
+        "has_0_hs(O1) & c(C1) & bSINGLE(O1, C1) & o(O2) & has_0_hs(O2) & bSINGLE(C1, O2) "
+        "& c(C2) & bSINGLE(O2, C2) & has_1_hs(C1)))"
+    )
+
+    add_def = {
+        "glycerolipid": "glycerolipid <=> ?[C1, C2, C3, O1, O2, O3]: (c(C1) & c(C2) & c(C3) & o(O1) "
+        "& o(O2) & o(O3) & bSINGLE(C1, C2) & bSINGLE(C2, C3) & bSINGLE(C1, O1) & "
+        "bSINGLE(C2, O2) & bSINGLE(C3, O3))"
+    }
+    checker.add_background_definitions(add_def)
+
+    mol = Chem.MolFromSmiles(
+        "C([C@@H]([C@@H](/C=C/CCCCCCCCCCCCC)O)NC(CCCCCCC/C=C\\CCCCCCCC)=O)O[C@@H]1O[C@@H]([C@@H](O[C@@H]2O[C@@H]([C@H](O)[C@@H]([C@H]2O)O)CO)[C@@H]([C@H]1O)O)CO"
+    )
+
+    checker.check_formula_for_molecule(formula_str, mol)
 
 
 class ModelCheckerTestWrapper:
