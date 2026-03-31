@@ -2,14 +2,13 @@ import itertools
 import logging
 import queue
 import time
-from copy import deepcopy
 from enum import Enum
 from functools import wraps
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from gavel.logic import logic
-from gavel.logic.logic_utils import substitute_var_in_formula, get_vars_in_formula, convert_to_nnf, convert_to_cnf
+from gavel.logic.logic_utils import get_vars_in_formula, substitute_var_in_formula
 
 
 def _ensure_bool(func):
@@ -31,6 +30,10 @@ class ModelCheckerOutcome(Enum):
     MODEL_FOUND_INFERRED = 4
     NO_MODEL_INFERRED = 5
     UNKNOWN = 6
+
+
+class ModelCheckerInputError(ValueError):
+    """Raised when the input formula or predicate definitions are malformed."""
 
 
 
@@ -127,6 +130,176 @@ class ModelChecker(AbstractModelChecker):
         )  # store already proven / disproven formulae to avoid doing it twice
         self.disproven_formulae = []
 
+    @staticmethod
+    def _format_name_list(names: List[str]) -> str:
+        quoted = [f"'{name}'" for name in names]
+        if len(quoted) == 1:
+            return quoted[0]
+        if len(quoted) == 2:
+            return f"{quoted[0]} and {quoted[1]}"
+        return ", ".join(quoted[:-1]) + f", and {quoted[-1]}"
+
+    def _predicate_arity(self, predicate_name: str) -> Optional[int]:
+        if predicate_name in self.extensions:
+            extension = self.extensions[predicate_name]
+            if isinstance(extension, np.ndarray):
+                return extension.ndim
+            return 0
+        if predicate_name in self.definitions:
+            return len(self.definitions[predicate_name][0])
+        return None
+
+    def _validate_literal_arguments(self, literal: logic.PredicateExpression) -> Tuple[int, ...]:
+        validated_arguments = []
+        for argument in literal.arguments:
+            if isinstance(argument, (int, np.integer)):
+                validated_arguments.append(int(argument))
+                continue
+            if isinstance(argument, logic.Constant):
+                constant_name = str(argument)
+                if constant_name in self.extensions or constant_name in self.definitions:
+                    raise ModelCheckerInputError(
+                        f"Predicate '{constant_name}' is being used as a constant in the formula. "
+                        f"Please check the formula and ensure that predicates are not used as constants."
+                    )
+                raise ModelCheckerInputError(
+                    f"Invalid constant '{constant_name}' used as argument in predicate '{literal.predicate}'. "
+                    f"Expected a bound variable or integer individual index."
+                )
+            if isinstance(argument, logic.Variable):
+                raise ModelCheckerInputError(
+                    f"Variable '{argument}' in predicate '{literal.predicate}' is not bound "
+                    f"at evaluation time. Please add a quantifier or include it in the predicate definition head."
+                )
+            raise ModelCheckerInputError(
+                f"Unsupported argument type '{type(argument).__name__}' in predicate '{literal.predicate}'."
+            )
+        return tuple(validated_arguments)
+
+    def _validate_formula_inputs(self, formula: logic.LogicElement):
+        known_predicates = set(self.extensions.keys()).union(self.definitions.keys())
+        missing_predicates = set()
+        predicate_constants = set()
+        arity_errors: List[str] = []
+        seen_arity_errors = set()
+        unbound_definition_variables = set()
+
+        def walk_predicates(expr: logic.LogicElement, bound_variables: Optional[set] = None, definition_name: Optional[str] = None):
+            if bound_variables is None:
+                bound_variables = set()
+
+            if isinstance(expr, logic.PredicateExpression):
+                predicate_name = str(expr.predicate)
+                expected_arity = self._predicate_arity(predicate_name)
+                actual_arity = len(expr.arguments)
+
+                if expected_arity is None:
+                    # Unknown predicates with arguments are treated as empty relations
+                    # because atom-level predicates can be absent for specific molecules.
+                    if actual_arity == 0:
+                        missing_predicates.add(predicate_name)
+                elif expected_arity != actual_arity:
+                    allow_global_shortcut = (
+                        predicate_name in self.extensions
+                        and expected_arity == 1
+                        and actual_arity == 0
+                    )
+                    if allow_global_shortcut:
+                        expected_arity = actual_arity
+
+                if expected_arity is not None and expected_arity != actual_arity:
+                    key = (predicate_name, expected_arity, actual_arity)
+                    if key not in seen_arity_errors:
+                        seen_arity_errors.add(key)
+                        arity_errors.append(
+                            f"Predicate `{predicate_name}` is defined with arity {expected_arity} "
+                            f"but called with {actual_arity} arguments"
+                        )
+
+                for argument in expr.arguments:
+                    if isinstance(argument, logic.Constant):
+                        constant_name = str(argument)
+                        if constant_name in known_predicates:
+                            predicate_constants.add(constant_name)
+                    elif isinstance(argument, logic.Variable) and definition_name is not None:
+                        variable_name = str(argument)
+                        if variable_name not in bound_variables and predicate_name in known_predicates:
+                            unbound_definition_variables.add((variable_name, definition_name))
+                return
+
+            if isinstance(expr, logic.QuantifiedFormula):
+                quantifier_bound_vars = set(bound_variables)
+                quantifier_bound_vars.update(str(v) for v in expr.variables)
+                walk_predicates(expr.formula, quantifier_bound_vars, definition_name)
+                return
+
+            if isinstance(expr, logic.UnaryFormula):
+                walk_predicates(expr.formula, bound_variables, definition_name)
+                return
+
+            if isinstance(expr, logic.BinaryFormula):
+                walk_predicates(expr.left, bound_variables, definition_name)
+                walk_predicates(expr.right, bound_variables, definition_name)
+                return
+
+            if isinstance(expr, logic.NaryFormula):
+                for sub_formula in expr.formulae:
+                    walk_predicates(sub_formula, bound_variables, definition_name)
+
+        walk_predicates(formula)
+
+        predicates_to_validate = {
+            str(expr.predicate)
+            for expr in get_predicate_expressions(formula)
+            if str(expr.predicate) in self.definitions
+        }
+        visited_definitions = set()
+        while predicates_to_validate:
+            predicate_name = predicates_to_validate.pop()
+            if predicate_name in visited_definitions or predicate_name not in self.definitions:
+                continue
+            visited_definitions.add(predicate_name)
+            definition_vars, definition_formula = self.definitions[predicate_name]
+            bound_vars = {str(v) for v in definition_vars}
+            walk_predicates(definition_formula, bound_vars, predicate_name)
+
+            for predicate_expr in get_predicate_expressions(definition_formula):
+                sub_predicate_name = str(predicate_expr.predicate)
+                if sub_predicate_name in self.definitions and sub_predicate_name not in visited_definitions:
+                    predicates_to_validate.add(sub_predicate_name)
+
+        error_messages = []
+        if predicate_constants:
+            names = sorted(predicate_constants)
+            if len(names) == 1:
+                error_messages.append(
+                    f"Predicate {self._format_name_list(names)} is being used as a constant in the formula. "
+                    f"Please check the formula and ensure that predicates are not used as constants."
+                )
+            else:
+                error_messages.append(
+                    f"Predicates {self._format_name_list(names)} are being used as constants in the formula. "
+                    f"Please check the formula and ensure that predicates are not used as constants."
+                )
+
+        if missing_predicates:
+            names = sorted(missing_predicates)
+            if len(names) == 1:
+                error_messages.append(f"Predicate {self._format_name_list(names)} is not defined")
+            else:
+                error_messages.append(f"Predicates {self._format_name_list(names)} are not defined")
+
+        error_messages.extend(arity_errors)
+
+        for variable_name, definition_name in sorted(unbound_definition_variables):
+            error_messages.append(
+                f"Variable '{variable_name}' is used in the definition of predicate '{definition_name}' "
+                f"but is not bound by predicate arguments or quantifiers."
+            )
+
+        if error_messages:
+            raise ModelCheckerInputError("\n".join(error_messages))
+
     def precalculate_extension(self, predicate: str, arity: int):
         """Recursively find all elements of the predicate extension, using the definition"""
         logging.info(f"Precalculating {arity}-ary predicate {predicate}")
@@ -161,33 +334,36 @@ class ModelChecker(AbstractModelChecker):
             literal = literal.formula
         if isinstance(literal, logic.PredicateExpression):
             if literal.predicate in self.extensions:
-                if len(tuple(literal.arguments)) > (
-                    len(self.extensions[literal.predicate]) - 1
-                ):
-                    raise ValueError(
+                expected_arity = self._predicate_arity(literal.predicate)
+                allow_global_shortcut = (
+                    expected_arity == 1 and len(tuple(literal.arguments)) == 0
+                )
+                if expected_arity is not None and len(tuple(literal.arguments)) != expected_arity and not allow_global_shortcut:
+                    raise ModelCheckerInputError(
                         f"Predicate `{literal.predicate}` is defined with arity"
-                        f" {len(self.extensions[literal.predicate]) - 1} but called with"
+                        f" {expected_arity} but called with"
                         f" {len(literal.arguments)} arguments"
                     )
+                validated_arguments = self._validate_literal_arguments(literal)
                 if len(literal.arguments) > 1:
-                    res = self.extensions[literal.predicate][tuple(literal.arguments)]
+                    res = self.extensions[literal.predicate][validated_arguments]
                 elif len(literal.arguments) == 1:
-                    res = self.extensions[literal.predicate][literal.arguments[0]]
+                    res = self.extensions[literal.predicate][validated_arguments[0]]
                 else:
                     res = self.extensions[literal.predicate]
             elif literal.predicate in self.definitions:
-                if len(tuple(literal.arguments)) > (
-                    len(self.calculated_extensions[literal.predicate]) - 1
-                ):
-                    raise ValueError(
+                expected_arity = self._predicate_arity(literal.predicate)
+                if expected_arity is not None and len(tuple(literal.arguments)) != expected_arity:
+                    raise ModelCheckerInputError(
                         f"Predicate `{literal.predicate}` is defined with arity"
-                        f" {len(self.calculated_extensions[literal.predicate]) - 1} but called with"
+                        f" {expected_arity} but called with"
                         f" {len(literal.arguments)} arguments"
                     )
+                validated_arguments = self._validate_literal_arguments(literal)
 
                 if np.isnan(
                         self.calculated_extensions[literal.predicate][
-                            tuple(literal.arguments)
+                            validated_arguments
                         ]
                 ):
                     definition = self.definitions[literal.predicate]
@@ -203,7 +379,7 @@ class ModelChecker(AbstractModelChecker):
                         f"{', '.join([str(ind) + '|->' + str(def_var) for ind, def_var in zip(literal.arguments, definition[0])])}"
                     )
                     model_found = (
-                            self.find_model(def_formula)[0]
+                            self.find_model(def_formula, validate_input=False)[0]
                             == ModelCheckerOutcome.MODEL_FOUND
                     )
                     logging.debug(
@@ -211,10 +387,14 @@ class ModelChecker(AbstractModelChecker):
                         f"{'positive' if model_found else 'negative'} to extension of {literal.predicate}"
                     )
                     self.calculated_extensions[literal.predicate][
-                        tuple(literal.arguments)
+                        validated_arguments
                     ] = model_found
-                res = self.calculated_extensions[literal.predicate][tuple(literal.arguments)]
+                res = self.calculated_extensions[literal.predicate][validated_arguments]
             else:
+                if len(literal.arguments) == 0:
+                    raise ModelCheckerInputError(
+                        f"Predicate '{literal.predicate}' is not defined"
+                    )
                 res = False
             return not res if negated else res
         elif isinstance(literal, logic.BinaryFormula):
@@ -263,14 +443,14 @@ class ModelChecker(AbstractModelChecker):
                     substituted_formula = substitute_n_vars_in_formula(
                             substituted_formula, {var: ind for var, ind in zip(formula.variables, assignment)}
                         )
-                    res = self.find_model(substituted_formula, timeout)
+                    res = self.find_model(substituted_formula, timeout, validate_input=False)
                     if res[0] in [ModelCheckerOutcome.NO_MODEL, ModelCheckerOutcome.NO_MODEL_INFERRED]:
                         return ModelCheckerOutcome.NO_MODEL, None
                 return ModelCheckerOutcome.MODEL_FOUND, dict()
             else:
                 if not isinstance(formula.formula, logic.QuantifiedFormula):
                     # innermost quantifier
-                    return self.find_model(formula, timeout)
+                    return self.find_model(formula, timeout, validate_input=False)
                 for assignment in itertools.product(
                         range(self.universe), repeat=len(list(formula.variables))
                 ):
@@ -280,20 +460,23 @@ class ModelChecker(AbstractModelChecker):
                     substituted_formula = substitute_n_vars_in_formula(
                             substituted_formula, {var: ind for var, ind in zip(formula.variables, assignment)}
                     )
-                    res = self.find_model(substituted_formula, timeout)
+                    res = self.find_model(substituted_formula, timeout, validate_input=False)
                     if res[0] in [ModelCheckerOutcome.MODEL_FOUND, ModelCheckerOutcome.MODEL_FOUND_INFERRED]:
                         return ModelCheckerOutcome.MODEL_FOUND, {**{var: ind for var, ind in zip(formula.variables, assignment)},
                                                                  **(res[1] if res[1] is not None else {})}
                 return ModelCheckerOutcome.NO_MODEL, None
         else:
-            return self.find_model(formula, timeout)
+            return self.find_model(formula, timeout, validate_input=False)
 
 
     def find_model(
-            self, formula, timeout=30
+            self, formula, timeout=30, validate_input=True
     ) -> (ModelCheckerOutcome, Optional[Tuple[str, int]]):
         """Recursive strategy, insert one individual in the formula at a time, assume formula in PNF, CNF with
         only existential quantifiers"""
+        if validate_input:
+            self._validate_formula_inputs(formula)
+
         q = queue.LifoQueue()
 
         if isinstance(formula, logic.QuantifiedFormula):
@@ -482,6 +665,21 @@ def substitute_n_vars_in_formula(
     elif isinstance(formula, logic.Variable):
         return substitutions.get(formula, formula)
     return formula
+
+
+def get_predicate_expressions(formula: logic.LogicElement) -> List[logic.PredicateExpression]:
+    """Collect all predicate expressions occurring in a formula tree."""
+    if isinstance(formula, logic.PredicateExpression):
+        return [formula]
+    if isinstance(formula, logic.QuantifiedFormula):
+        return get_predicate_expressions(formula.formula)
+    if isinstance(formula, logic.UnaryFormula):
+        return get_predicate_expressions(formula.formula)
+    if isinstance(formula, logic.BinaryFormula):
+        return get_predicate_expressions(formula.left) + get_predicate_expressions(formula.right)
+    if isinstance(formula, logic.NaryFormula):
+        return [expr for sub_formula in formula.formulae for expr in get_predicate_expressions(sub_formula)]
+    return []
 
 def replace_vars_in_clause(clause, const):
     return logic.NaryFormula(
