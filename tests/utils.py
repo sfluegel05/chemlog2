@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from gavel.dialects.tptp.parser import TPTPParser
 from gavel.logic import logic
 from rdkit import Chem
@@ -58,3 +61,48 @@ class ModelCheckerTestWrapper:
                         variables.append(arg)
 
         return variables
+
+    def load_background_definitions_from_json(
+        self,
+        file_path: str | Path,
+        *,
+        replace: bool = True,
+    ) -> dict[str, tuple[list[logic.Variable], logic.QuantifiedFormula]]:
+        """Load background definitions from a JSON file.
+
+        Args:
+            file_path: JSON file created by `save_background_definitions_to_json`.
+            replace: If True, clear the current background definitions before loading.
+
+        Returns:
+            The loaded background definitions in the internal tuple format.
+        """
+        payload = json.loads(Path(file_path).read_text(encoding="utf-8"))
+        print(f"Loading {len(payload)} background definitions from {file_path}")
+        counter = 0
+        loaded_definitions = {}
+        for item in payload:
+            predicate_name = item["predicate"]
+            definition_str = item["definition"]
+            try:
+                pred_variables, fol_formula = self.parse_formula(definition_str)
+            except Exception as e:
+                counter += 1
+                # print(f"Error parsing definition for {predicate_name}: {e}")
+                continue
+            loaded_definitions[predicate_name] = (pred_variables, fol_formula)
+
+        print(f"Successfully loaded {len(loaded_definitions)} definitions")
+        print(f"Failed to load {counter} definitions")
+        if replace:
+            self._background_definitions.clear()
+        self._background_definitions.update(loaded_definitions)
+        return loaded_definitions
+
+
+if __name__ == "__main__":
+    # Example usage
+    checker = ModelCheckerTestWrapper()
+    checker.load_background_definitions_from_json(
+        "/home/staff/a/akhedekar/chebai-NL2FOL/nl_2_fol/inference/learner/validation_background_defs.json"
+    )
