@@ -278,3 +278,148 @@ def test_model_checking_additional_examples(checker: ModelCheckerTestWrapper):
     )
 
     checker.check_formula_for_molecule(formula_str, mol)
+
+
+# ---------------------------------------------------------------------------
+# Tests for the atom-level formulas in data/fol_specifications.
+#
+# ModelCheckerTestWrapper builds its extensions with mol_to_fol_atoms, i.e. the
+# domain consists of the atoms of a molecule. The functional-group specs below
+# are therefore checked directly; the fragment-level (charges.tptp,
+# fragment_*.tptp) and building-block-level (peptide_structure*.tptp) specs use
+# a different domain and are out of scope here.
+#
+# The definition strings are taken verbatim from the corresponding spec files.
+# SMILES are intentionally left as empty placeholders - fill them in with
+# molecules matching the description in each test; tests skip while empty.
+# ---------------------------------------------------------------------------
+
+# data/fol_specifications/functional_group_helpers.tptp
+AMIDE_BOND_DEF = (
+    "amide_bond(Ac, Ao, An) <=> (c(Ac) & o(Ao) & n(An) & (bSINGLE(Ac, Ao) | "
+    "bDOUBLE(Ac, Ao)) & (bSINGLE(Ac, Ao) | bSINGLE(Ac, An)) & (bDOUBLE(Ac, An) "
+    "| bDOUBLE(Ac, Ao)) & (bDOUBLE(Ac, An) | bSINGLE(Ac, An)) & (has_1_hs(Ao) | "
+    "charge_m1(Ao) | bDOUBLE(Ac, Ao)) & (has_1_hs(Ao) | charge_m1(Ao) | "
+    "bSINGLE(Ac, An)) )"
+)
+HAS_AMINO_NONCONFORMING_NEIGHBOR_DEF = (
+    "has_amino_nonconforming_neighbor(An) <=> ?[Neighbor, Ao]: "
+    "(has_bond_to(An, Neighbor) & (~c(Neighbor) | ~bSINGLE(An, Neighbor)) & "
+    "(~c(Neighbor) | ~bDOUBLE(An, Neighbor) | ~amide_bond(Neighbor, Ao, An)) & "
+    "(~h(Neighbor) | ~bSINGLE(An, Neighbor)) & (~h(Neighbor) | "
+    "~bDOUBLE(An, Neighbor) | ~amide_bond(Neighbor, Ao, An)) )"
+)
+
+# data/fol_specifications/functional_groups.tptp
+AMINO_RESIDUE_DEF = (
+    "amino_residue(An) <=> (n(An) & ~has_amino_nonconforming_neighbor(An))"
+)
+CARBOXY_RESIDUE_DEF = (
+    "carboxy_residue(Ac, Ad, As) <=> (c(Ac) & o(Ad) & ~c(As) & ~h(As) & "
+    "bDOUBLE(Ac, Ad) & bSINGLE(Ac, As) )"
+)
+
+# Placeholder SMILES - insert real molecules here.
+AMIDE_POSITIVE_SMILES = "CSCC[C@H](NC(=O)[C@H](CC(C)C)NC(=O)CN)C(N)=O"  # CHEBI:191172 molecule WITH an amide bond, e.g. a peptide / acetamide
+AMIDE_NEGATIVE_SMILES = (
+    "NCC(=O)O"  # CHEBI:15428 molecule WITHOUT an amide bond, e.g. an alcohol
+)
+AMIDE_CARBOXYLIC_ACID_SMILES = (
+    "CC(N)CC(=O)O"  # CHEBI:37081 carboxylic acid (C=O present but no amide N)
+)
+
+CARBOXY_POSITIVE_SMILES = (
+    "O=C(O)C1CCCN1"  # CHEBI:26271 molecule WITH a carboxy residue, e.g. acetic acid
+)
+CARBOXY_NEGATIVE_SMILES = "N[C@H]1COC(O)[C@H](O)[C@H]1O"  # CHEBI:46991 molecule WITHOUT any carbonyl, e.g. an alkane
+
+AMINO_PRIMARY_AMINE_SMILES = (
+    "CC(N)Cc1ccccc1"  # CHEBI:132233 primary amine, e.g. methylamine
+)
+AMINO_ALPHA_AMINO_ACID_SMILES = (
+    "NC(Cc1ccccc1)C(=O)O"  # CHEBI:28044 alpha-amino acid, e.g. glycine
+)
+AMINO_NITRO_SMILES = (
+    "O=[N+]([O-])Cl"  # CHEBI:142774 nitro compound (N present but not an amino residue)
+)
+AMINO_NO_NITROGEN_SMILES = (
+    "CSC(C)CC(=O)OCC(C)C"  # CHEBI:168833 molecule without any nitrogen, e.g. an alkane
+)
+
+
+def _mol(smiles: str) -> Chem.Mol:
+    if not smiles:
+        pytest.skip("placeholder SMILES not set")
+    mol = Chem.MolFromSmiles(smiles)
+    assert mol is not None, f"invalid SMILES: {smiles!r}"
+    return mol
+
+
+def test_spec_amide_bond_detection(checker: ModelCheckerTestWrapper):
+    checker.add_background_definitions({"amide_bond": AMIDE_BOND_DEF})
+    formula_str = "hasAmideBond <=> ?[Ac, Ao, An]: amide_bond(Ac, Ao, An)"
+
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(AMIDE_POSITIVE_SMILES))
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(AMIDE_NEGATIVE_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
+    )
+    # A carboxylic acid has a C=O but no amide nitrogen, so it must not match.
+    assert (
+        checker.check_formula_for_molecule(
+            formula_str, _mol(AMIDE_CARBOXYLIC_ACID_SMILES)
+        )
+        == ModelCheckerOutcome.NO_MODEL
+    )
+
+
+def test_spec_carboxy_residue_detection(checker: ModelCheckerTestWrapper):
+    checker.add_background_definitions({"carboxy_residue": CARBOXY_RESIDUE_DEF})
+    formula_str = "hasCarboxyResidue <=> ?[Ac, Ad, As]: carboxy_residue(Ac, Ad, As)"
+
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(CARBOXY_POSITIVE_SMILES))
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(CARBOXY_NEGATIVE_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
+    )
+
+
+def test_spec_amino_residue_detection(checker: ModelCheckerTestWrapper):
+    # amino_residue depends transitively on has_amino_nonconforming_neighbor and amide_bond.
+    checker.add_background_definitions(
+        {
+            "amide_bond": AMIDE_BOND_DEF,
+            "has_amino_nonconforming_neighbor": HAS_AMINO_NONCONFORMING_NEIGHBOR_DEF,
+            "amino_residue": AMINO_RESIDUE_DEF,
+        }
+    )
+    formula_str = "hasAminoResidue <=> ?[An]: amino_residue(An)"
+
+    assert (
+        checker.check_formula_for_molecule(
+            formula_str, _mol(AMINO_PRIMARY_AMINE_SMILES)
+        )
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(
+            formula_str, _mol(AMINO_ALPHA_AMINO_ACID_SMILES)
+        )
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    # A nitrogen with non-conforming (e.g. oxygen) neighbours is not an amino residue.
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(AMINO_NITRO_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
+    )
+    # No nitrogen at all -> no amino residue.
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(AMINO_NO_NITROGEN_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
+    )
