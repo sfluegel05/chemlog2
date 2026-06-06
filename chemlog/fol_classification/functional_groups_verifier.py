@@ -8,7 +8,8 @@ from rdkit import Chem
 
 from chemlog.base_classifier import Classifier
 from chemlog.fol_classification.fol_utils import normalize_fol_formula
-from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.fol_classification.fast_model_checking import FastModelChecker as ModelChecker
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 from chemlog.msol import peptide_size
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms, apply_variable_assignment
 

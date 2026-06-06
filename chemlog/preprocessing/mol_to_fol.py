@@ -8,7 +8,8 @@ import numpy as np
 
 from chemlog.msol.peptide_size import BuildingBlock
 from chemlog.preprocessing.chebi_data import ChEBIData
-from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
+from chemlog.fol_classification.fast_model_checking import FastModelChecker as ModelChecker
+from chemlog.fol_classification.model_checking import ModelCheckerOutcome
 from chemlog.alg_classification.peptide_size_classifier import get_chunks, get_possible_amino_chunk_assignments
 
 

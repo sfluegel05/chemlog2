@@ -10,13 +10,17 @@ from chemlog.base_classifier import Classifier
 from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.fol_classification.msol_to_fol_translator import FOLTranslator
 from chemlog.preprocessing.mol_to_fol import mol_to_fol_building_blocks, apply_variable_assignment, mol_to_fol_atoms_plus_building_blocks
+from chemlog.fol_classification.fast_model_checking import FastModelChecker
 from chemlog.fol_classification.model_checking import ModelChecker, ModelCheckerOutcome
 from chemlog.msol import peptide_size
 
 
 class PeptideSizeVerifier(Classifier):
 
-    def __init__(self):
+    def __init__(self, model_checker_class=None):
+        if model_checker_class is None:
+            model_checker_class = FastModelChecker
+        self.model_checker_class = model_checker_class
         self.structure_formulas = self.get_structure_formulas()
         for f in self.structure_formulas.values():
             f.right = normalize_fol_formula(f.right)
@@ -67,7 +71,7 @@ class PeptideSizeVerifier(Classifier):
         logging.debug(f"Using the following second-order elements: {', '.join([str(i) + ' -> ' + str(v) for i, v in enumerate(second_order_elements)])}")
         # this model checker uses amide_bond, amino_residue and carboxy_residue from the extension and
         # amino_acid_residue from the definition (if it is not already in the extension)
-        model_checker = ModelChecker(
+        model_checker = self.model_checker_class(
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
                                                          for pred, formula in self.structure_formulas.items()})
         # use second_order_elements to map variable_assignment from list of atoms to index in extension
@@ -92,7 +96,7 @@ class PeptideSizeVerifier(Classifier):
                       f"{', '.join([str(i) + ' -> ' + str(v) for i, v in enumerate(second_order_elements)])}")
         # this model checker uses amide_bond, amino_residue and carboxy_residue from the extension and
         # amino_acid_residue from the definition (if it is not already in the extension)
-        model_checker = ModelChecker(
+        model_checker = self.model_checker_class(
             universe, extensions, predicate_definitions={pred: (formula.left.arguments, formula.right)
                                                          for pred, formula in self.structure_formulas.items()})
         assignment = None
