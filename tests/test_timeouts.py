@@ -30,8 +30,10 @@ def test_timeouts_for_diol():
         "& A1 != A2))"
     )
 
-    positive_examples = []
-    _assert_for_no_timeout(formula_str, positive_examples)
+    samples = [
+        "Cc1cn([C@H]2C[C@H](O)[C@@H](COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(=O)O[C@H]3C[C@@H](O[C@@H]3COP(O)(O)=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)n3cc(C)c(=O)[nH]c3=O)O2)c(=O)[nH]c1=O",
+    ]
+    _assert_for_no_timeout(formula_str, samples)
 
 
 def test_timeouts_for_oxy_fatty_acid():
@@ -43,13 +45,13 @@ def test_timeouts_for_oxy_fatty_acid():
         "& bDOUBLE(A1, A2) & has_bond_to(A1, A3) & has_bond_to(A1, A4) & ~(A3 = A4))))"
     )
 
-    positive_samples = [
+    samples = [
         "O([C@H]1[C@H](O[C@@H]2O[C@H]([C@@H](O)[C@@H](O)[C@@H]2O)C)[C@@H](NC(=O)C)[C@@H](O[C@@H]1CO)OC[C@@H](O)[C@H](O)[C@H](O[C@@H]3O[C@@H]([C@H](O)[C@H](O[C@]4(O[C@H]([C@H](NC(=O)C)[C@@H](O)C4)[C@H](O)[C@H](O)CO)C(O)=O)[C@H]3O)CO)[C@@H](NC(=O)C)CO)[C@@H]5O[C@@H]([C@H](O)[C@H](O[C@]6(O[C@H]([C@H](NC(=O)C)[C@@H](O)C6)[C@H](O)[C@H](O)CO)C(O)=O)[C@H]5O)CO",
         "O=C/1N[C@@H](C(=O)O)[C@@H](C(=O)N[C@H](C(=O)N[C@@H](/C=C/C(=C/[C@@H]([C@@H](OC)CC2=CC=CC=C2)C)/C)[C@@H](C(N[C@H](CCC(N(\\C1=C/C)C)=O)C(=O)O)=O)C)CCCCN=C(N)N)C",
         "S(CCC(N)C(=O)NC(C(=O)NCC(=O)NC(C(=O)N1C(C(=O)NC(C(=O)NC(C(=O)NC(C(=O)NC(C(=O)NC(C=O)CC2=CC=C(O)C=C2)CC(=O)O)C(CC)C)C(C)C)CCCCN)CCC1)CC(=O)O)CCCCN)C",
         "O=C1OCC(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)CC(O)CCCCCCC)CC(C)C)CCC(=O)O)CCC(=O)N)C(C)C)CC(C)C)CCC(=O)N)C(=O)NC(C(=O)NC(C(=O)NC(CCC(=O)N)C(NC(C(NC(C(NC(C(NC1C(CC)C)=O)CCC(=O)N)=O)CC(C)C)=O)CC(C)C)=O)CC(C)C)C(C)C",
     ]
-    _assert_for_no_timeout(formula_str, positive_samples)
+    _assert_for_no_timeout(formula_str, samples)
 
 
 ADDITIONAL_DEFINITIONS = {
