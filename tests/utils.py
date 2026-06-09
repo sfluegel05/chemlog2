@@ -39,7 +39,9 @@ class ModelCheckerTestWrapper:
     def check_formula_for_molecule(self, formula_str: str, molecule: Chem.Mol) -> bool:
         _, tptp_parsed = self.parse_formula(formula_str)
         universe, extensions = mol_to_fol_atoms(molecule)
-        model_checker = ModelChecker(universe, extensions, self._background_definitions)
+        model_checker = ModelChecker(
+            universe, extensions, self._background_definitions, all_different=True
+        )
         outcome, _ = model_checker.find_model(tptp_parsed)
         return outcome
 
