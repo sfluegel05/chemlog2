@@ -1,15 +1,11 @@
 import pytest
-from gavel.dialects.tptp.parser import TPTPParser
-from gavel.logic import logic
 from rdkit import Chem
 
-from chemlog.fol_classification.fol_utils import normalize_fol_formula
 from chemlog.fol_classification.model_checking import (
-    ModelChecker,
     ModelCheckerInputError,
     ModelCheckerOutcome,
 )
-from chemlog.preprocessing.mol_to_fol import mol_to_fol_atoms
+from tests.utils import ModelCheckerTestWrapper
 
 
 @pytest.fixture
@@ -17,7 +13,7 @@ def checker():
     return ModelCheckerTestWrapper()
 
 
-def test_when_predicate_is_used_as_constant(checker: "ModelCheckerTestWrapper"):
+def test_when_predicate_is_used_as_constant(checker: ModelCheckerTestWrapper):
     molecule = Chem.MolFromSmiles(
         "C([C@@H]([C@@H](/C=C/CCCCCCCCCCCCC)O)NC(CCCCCCC/C=C\\CCCCCCCC)=O)O[C@@H]1O[C@@H]([C@@H](O[C@@H]2O[C@@H]([C@H](O)[C@@H]([C@H]2O)O)CO)[C@@H]([C@H]1O)O)CO"
     )
@@ -46,7 +42,7 @@ def test_when_predicate_is_used_as_constant(checker: "ModelCheckerTestWrapper"):
         checker.check_formula_for_molecule(formula_str, molecule)
 
 
-def test_raise_missing_predicate_exception(checker: "ModelCheckerTestWrapper"):
+def test_raise_missing_predicate_exception(checker: ModelCheckerTestWrapper):
     ethanol = Chem.MolFromSmiles("CCO")
     # Predicate `oneCarbonCompound` is not defined in the background definitions,
     # and is being used in the formula. This should raise MissingPredicateException.
@@ -73,7 +69,7 @@ def test_raise_missing_predicate_exception(checker: "ModelCheckerTestWrapper"):
         checker.check_formula_for_molecule(formula_str, ethanol)
 
 
-def test_predicate_arity_exception(checker: "ModelCheckerTestWrapper"):
+def test_predicate_arity_exception(checker: ModelCheckerTestWrapper):
     """Test that exceptions in does_mol_match_tptp_definition are properly raised."""
     checker.add_background_definitions(
         {
@@ -110,7 +106,7 @@ def test_predicate_arity_exception(checker: "ModelCheckerTestWrapper"):
         checker.check_formula_for_molecule(formula_str, mol)
 
 
-def test_predicate_arity_mismatch(checker: "ModelCheckerTestWrapper"):
+def test_predicate_arity_mismatch(checker: ModelCheckerTestWrapper):
     molecule = Chem.MolFromSmiles(
         "C([C@@H]([C@@H](/C=C/CCCCCCCCCCCCC)O)NC(CCCCCCC/C=C\\CCCCCCCC)=O)O[C@@H]1O[C@@H]([C@@H](O[C@@H]2O[C@@H]([C@H](O)[C@@H]([C@H]2O)O)CO)[C@@H]([C@H]1O)O)CO"
     )
@@ -132,7 +128,7 @@ def test_predicate_arity_mismatch(checker: "ModelCheckerTestWrapper"):
         checker.check_formula_for_molecule(formula_str, molecule)
 
 
-def test_unknown_index_error(checker: "ModelCheckerTestWrapper"):
+def test_unknown_index_error(checker: ModelCheckerTestWrapper):
     molecule = Chem.MolFromSmiles(
         "C=1[C@@]2([C@]3(CC[C@]4([C@]([C@@]3(C=CC2=CC(C1)=O)[H])(CCC4=O)[H])C)[H])C"
     )
@@ -158,7 +154,7 @@ def test_unknown_index_error(checker: "ModelCheckerTestWrapper"):
         checker.check_formula_for_molecule(formula_str, molecule)
 
 
-def test_model_check_success(checker: "ModelCheckerTestWrapper"):
+def test_model_check_success(checker: ModelCheckerTestWrapper):
     carbonMonoxide = Chem.MolFromSmiles("[C-]#[O+]")  # CHEBI:17245
     ethanol = Chem.MolFromSmiles("CCO")
     thionitrousAcid = Chem.MolFromSmiles("SN=O")  # CHEBI:6530
@@ -169,13 +165,22 @@ def test_model_check_success(checker: "ModelCheckerTestWrapper"):
         "twoPlusCarbonCompound": "twoPlusCarbonCompound <=> ?[X, Y]: (c(X) & c(Y) & has_bond_to(X, Y) & X != Y)",
     }
     checker.add_background_definitions(add_def_dict)
-    assert checker.check_formula_for_molecule(formula_str, carbonMonoxide) is True
-    assert checker.check_formula_for_molecule(formula_str, ethanol) is False
-    assert checker.check_formula_for_molecule(formula_str, thionitrousAcid) is False
+    assert (
+        checker.check_formula_for_molecule(formula_str, carbonMonoxide)
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, ethanol)
+        == ModelCheckerOutcome.NO_MODEL
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, thionitrousAcid)
+        == ModelCheckerOutcome.NO_MODEL
+    )
 
 
 def test_model_check_success_absent_predicate_in_spectrum(
-    checker: "ModelCheckerTestWrapper",
+    checker: ModelCheckerTestWrapper,
 ):
     ethanol = Chem.MolFromSmiles("CCO")
     thionitrous_acid = Chem.MolFromSmiles("SN=O")
@@ -184,12 +189,18 @@ def test_model_check_success_absent_predicate_in_spectrum(
     # treat missing unary extensions as False instead of raising.
     formula_str = "containsSulfur <=> ?[A1]: s(A1)"
 
-    assert checker.check_formula_for_molecule(formula_str, ethanol) is False
-    assert checker.check_formula_for_molecule(formula_str, thionitrous_acid) is True
+    assert (
+        checker.check_formula_for_molecule(formula_str, ethanol)
+        == ModelCheckerOutcome.NO_MODEL
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, thionitrous_acid)
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
 
 
 def test_model_check_success_global_charge_shortcut(
-    checker: "ModelCheckerTestWrapper",
+    checker: ModelCheckerTestWrapper,
 ):
     ethanol = Chem.MolFromSmiles("CCO")
     ammonium = Chem.MolFromSmiles("[NH4+]")
@@ -198,14 +209,26 @@ def test_model_check_success_global_charge_shortcut(
     cation_formula = "cationicMolecule <=> net_charge_positive"
 
     # Edge case: allow 0-arity use of global charge predicates.
-    assert checker.check_formula_for_molecule(neutral_formula, ethanol) is True
-    assert checker.check_formula_for_molecule(neutral_formula, ammonium) is False
-    assert checker.check_formula_for_molecule(cation_formula, ammonium) is True
-    assert checker.check_formula_for_molecule(cation_formula, ethanol) is False
+    assert (
+        checker.check_formula_for_molecule(neutral_formula, ethanol)
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(neutral_formula, ammonium)
+        == ModelCheckerOutcome.NO_MODEL
+    )
+    assert (
+        checker.check_formula_for_molecule(cation_formula, ammonium)
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(cation_formula, ethanol)
+        == ModelCheckerOutcome.NO_MODEL
+    )
 
 
 def test_model_check_success_transitive_background_definitions(
-    checker: "ModelCheckerTestWrapper",
+    checker: ModelCheckerTestWrapper,
 ):
     ethanol = Chem.MolFromSmiles("CCO")
     methane = Chem.MolFromSmiles("C")
@@ -219,11 +242,17 @@ def test_model_check_success_transitive_background_definitions(
 
     # Spectrum test: same chained definition should distinguish oxygen-containing
     # and oxygen-free molecules.
-    assert checker.check_formula_for_molecule(formula_str, ethanol) is True
-    assert checker.check_formula_for_molecule(formula_str, methane) is False
+    assert (
+        checker.check_formula_for_molecule(formula_str, ethanol)
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, methane)
+        == ModelCheckerOutcome.NO_MODEL
+    )
 
 
-def test_model_checking_additional_examples(checker: "ModelCheckerTestWrapper"):
+def test_model_checking_additional_examples(checker: ModelCheckerTestWrapper):
     # https://github.com/sfluegel05/chemlog-peptides/pull/12
     formula_str = "cation <=> net_charge_positive"
 
@@ -292,16 +321,30 @@ CARBOXY_RESIDUE_DEF = (
 
 # Placeholder SMILES - insert real molecules here.
 AMIDE_POSITIVE_SMILES = "CSCC[C@H](NC(=O)[C@H](CC(C)C)NC(=O)CN)C(N)=O"  # CHEBI:191172 molecule WITH an amide bond, e.g. a peptide / acetamide
-AMIDE_NEGATIVE_SMILES = "NCC(=O)O"  # CHEBI:15428 molecule WITHOUT an amide bond, e.g. an alcohol
-AMIDE_CARBOXYLIC_ACID_SMILES = "CC(N)CC(=O)O"  # CHEBI:37081 carboxylic acid (C=O present but no amide N)
+AMIDE_NEGATIVE_SMILES = (
+    "NCC(=O)O"  # CHEBI:15428 molecule WITHOUT an amide bond, e.g. an alcohol
+)
+AMIDE_CARBOXYLIC_ACID_SMILES = (
+    "CC(N)CC(=O)O"  # CHEBI:37081 carboxylic acid (C=O present but no amide N)
+)
 
-CARBOXY_POSITIVE_SMILES = "O=C(O)C1CCCN1"  # CHEBI:26271 molecule WITH a carboxy residue, e.g. acetic acid
+CARBOXY_POSITIVE_SMILES = (
+    "O=C(O)C1CCCN1"  # CHEBI:26271 molecule WITH a carboxy residue, e.g. acetic acid
+)
 CARBOXY_NEGATIVE_SMILES = "N[C@H]1COC(O)[C@H](O)[C@H]1O"  # CHEBI:46991 molecule WITHOUT any carbonyl, e.g. an alkane
 
-AMINO_PRIMARY_AMINE_SMILES = "CC(N)Cc1ccccc1"  # CHEBI:132233 primary amine, e.g. methylamine
-AMINO_ALPHA_AMINO_ACID_SMILES = "NC(Cc1ccccc1)C(=O)O"  # CHEBI:28044 alpha-amino acid, e.g. glycine
-AMINO_NITRO_SMILES = "O=[N+]([O-])Cl"  # CHEBI:142774 nitro compound (N present but not an amino residue)
-AMINO_NO_NITROGEN_SMILES = "CSC(C)CC(=O)OCC(C)C"  # CHEBI:168833 molecule without any nitrogen, e.g. an alkane
+AMINO_PRIMARY_AMINE_SMILES = (
+    "CC(N)Cc1ccccc1"  # CHEBI:132233 primary amine, e.g. methylamine
+)
+AMINO_ALPHA_AMINO_ACID_SMILES = (
+    "NC(Cc1ccccc1)C(=O)O"  # CHEBI:28044 alpha-amino acid, e.g. glycine
+)
+AMINO_NITRO_SMILES = (
+    "O=[N+]([O-])Cl"  # CHEBI:142774 nitro compound (N present but not an amino residue)
+)
+AMINO_NO_NITROGEN_SMILES = (
+    "CSC(C)CC(=O)OCC(C)C"  # CHEBI:168833 molecule without any nitrogen, e.g. an alkane
+)
 
 
 def _mol(smiles: str) -> Chem.Mol:
@@ -312,32 +355,42 @@ def _mol(smiles: str) -> Chem.Mol:
     return mol
 
 
-def test_spec_amide_bond_detection(checker: "ModelCheckerTestWrapper"):
+def test_spec_amide_bond_detection(checker: ModelCheckerTestWrapper):
     checker.add_background_definitions({"amide_bond": AMIDE_BOND_DEF})
     formula_str = "hasAmideBond <=> ?[Ac, Ao, An]: amide_bond(Ac, Ao, An)"
 
-    assert checker.check_formula_for_molecule(formula_str, _mol(AMIDE_POSITIVE_SMILES)) is True
-    assert checker.check_formula_for_molecule(formula_str, _mol(AMIDE_NEGATIVE_SMILES)) is False
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(AMIDE_POSITIVE_SMILES))
+        == ModelCheckerOutcome.MODEL_FOUND
+    )
+    assert (
+        checker.check_formula_for_molecule(formula_str, _mol(AMIDE_NEGATIVE_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
+    )
     # A carboxylic acid has a C=O but no amide nitrogen, so it must not match.
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(AMIDE_CARBOXYLIC_ACID_SMILES))
-        is False
+        checker.check_formula_for_molecule(
+            formula_str, _mol(AMIDE_CARBOXYLIC_ACID_SMILES)
+        )
+        == ModelCheckerOutcome.NO_MODEL
     )
 
 
-def test_spec_carboxy_residue_detection(checker: "ModelCheckerTestWrapper"):
+def test_spec_carboxy_residue_detection(checker: ModelCheckerTestWrapper):
     checker.add_background_definitions({"carboxy_residue": CARBOXY_RESIDUE_DEF})
     formula_str = "hasCarboxyResidue <=> ?[Ac, Ad, As]: carboxy_residue(Ac, Ad, As)"
 
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(CARBOXY_POSITIVE_SMILES)) is True
+        checker.check_formula_for_molecule(formula_str, _mol(CARBOXY_POSITIVE_SMILES))
+        == ModelCheckerOutcome.MODEL_FOUND
     )
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(CARBOXY_NEGATIVE_SMILES)) is False
+        checker.check_formula_for_molecule(formula_str, _mol(CARBOXY_NEGATIVE_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
     )
 
 
-def test_spec_amino_residue_detection(checker: "ModelCheckerTestWrapper"):
+def test_spec_amino_residue_detection(checker: ModelCheckerTestWrapper):
     # amino_residue depends transitively on has_amino_nonconforming_neighbor and amide_bond.
     checker.add_background_definitions(
         {
@@ -349,69 +402,24 @@ def test_spec_amino_residue_detection(checker: "ModelCheckerTestWrapper"):
     formula_str = "hasAminoResidue <=> ?[An]: amino_residue(An)"
 
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(AMINO_PRIMARY_AMINE_SMILES))
-        is True
+        checker.check_formula_for_molecule(
+            formula_str, _mol(AMINO_PRIMARY_AMINE_SMILES)
+        )
+        == ModelCheckerOutcome.MODEL_FOUND
     )
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(AMINO_ALPHA_AMINO_ACID_SMILES))
-        is True
+        checker.check_formula_for_molecule(
+            formula_str, _mol(AMINO_ALPHA_AMINO_ACID_SMILES)
+        )
+        == ModelCheckerOutcome.MODEL_FOUND
     )
     # A nitrogen with non-conforming (e.g. oxygen) neighbours is not an amino residue.
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(AMINO_NITRO_SMILES)) is False
+        checker.check_formula_for_molecule(formula_str, _mol(AMINO_NITRO_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
     )
     # No nitrogen at all -> no amino residue.
     assert (
-        checker.check_formula_for_molecule(formula_str, _mol(AMINO_NO_NITROGEN_SMILES)) is False
+        checker.check_formula_for_molecule(formula_str, _mol(AMINO_NO_NITROGEN_SMILES))
+        == ModelCheckerOutcome.NO_MODEL
     )
-
-
-class ModelCheckerTestWrapper:
-    def __init__(self) -> None:
-        self.parser = TPTPParser()
-        self._background_definitions: dict[
-            str, tuple[list[logic.Variable], logic.QuantifiedFormula]
-        ] = {}
-
-    def parse_formula(
-        self, formula_str: str
-    ) -> tuple[list[logic.Variable], logic.QuantifiedFormula]:
-        formula_wrapped = f"fof(temp, axiom, {formula_str})."
-        tptp_parsed = self.parser.parse(formula_wrapped)[0].formula
-        pred_variables = self._extract_predicate_variables(tptp_parsed.left)
-        return pred_variables, normalize_fol_formula(tptp_parsed.right)
-
-    def add_background_definitions(self, def_dict: dict[str, str]):
-        for _, def_str in def_dict.items():
-            formula_wrapped = f"fof(temp, axiom, {def_str})."
-            tptp_parsed = self.parser.parse(formula_wrapped)[0].formula
-            pred_name = str(tptp_parsed.left.predicate)
-            vars = self._extract_predicate_variables(tptp_parsed.left)
-            normalized_formula = normalize_fol_formula(tptp_parsed.right)
-            self._background_definitions[pred_name] = (vars, normalized_formula)
-
-    def check_formula_for_molecule(self, formula_str: str, molecule: Chem.Mol) -> bool:
-        _, tptp_parsed = self.parse_formula(formula_str)
-        universe, extensions = mol_to_fol_atoms(molecule)
-        model_checker = ModelChecker(universe, extensions, self._background_definitions)
-        outcome, _ = model_checker.find_model(tptp_parsed)
-        return outcome == ModelCheckerOutcome.MODEL_FOUND
-
-    def _extract_predicate_variables(
-        self, formula_left_side: logic.PredicateExpression
-    ) -> list[logic.Variable]:
-        """Extract the variables from a predicate definition string.
-
-        For a definition like `new_predicate(X1, X2) <=> ?[X3]: (...)`
-        This extracts [X1, X2] from the predicate call on the left side of the biimplication.
-        """
-        # Extract variables from the predicate expression
-        variables = []
-        if isinstance(formula_left_side, logic.PredicateExpression):
-            # The arguments should be Variable objects
-            if hasattr(formula_left_side, "arguments") and formula_left_side.arguments:
-                for arg in formula_left_side.arguments:
-                    if isinstance(arg, logic.Variable):
-                        variables.append(arg)
-
-        return variables
