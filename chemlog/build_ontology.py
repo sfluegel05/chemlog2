@@ -21,7 +21,7 @@ def build_ontology_from_results(chebi_version, results_path):
             universal_newlines=True,
         )
     chebi_onto = pyhornedowl.open_ontology(chebi_path)
-    results = pd.read_json(results_path)
+    results = pd.read_json(results_path, dtype={"chebi_id": str})
     trans_hierarchy = chebi_data.get_trans_hierarchy()
     chebi_onto.add_prefix_mapping("", "http://purl.obolibrary.org/obo/")
     for _, row in tqdm.tqdm(results.iterrows()):

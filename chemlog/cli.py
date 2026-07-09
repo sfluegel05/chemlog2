@@ -337,6 +337,7 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
 def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False):
     data_cls = ChEBIData(chebi_version)
     data = data_cls.processed
+    molecules = [str(m) for m in molecules]
     if len(molecules) > 0:
         data_filtered = data.loc[data.index.isin(molecules)]
     else:
@@ -345,7 +346,7 @@ def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False
         data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
     if only_peptides:
         trans_hierarchy = data_cls.get_trans_hierarchy()
-        data_filtered = data_filtered.loc[list(set.intersection(set(nx.descendants(trans_hierarchy, 16670)),
+        data_filtered = data_filtered.loc[list(set.intersection(set(nx.descendants(trans_hierarchy, "16670")),
                                                                 set(data_filtered.index)))]
 
     # start with shortest SMILES
@@ -432,6 +433,7 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
     substruct_verifier = SubstructVerifier()
     res = []
 
+    molecules = [str(m) for m in molecules]
     results = [r for r in results if (len(molecules) == 0 or r["chebi_id"] in molecules) and (
             not only_3star or data.processed.loc[r["chebi_id"], "subset"] == "3_STAR")]
 

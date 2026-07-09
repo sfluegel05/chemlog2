@@ -1,15 +1,14 @@
-import gzip
-import json
 import logging
 import os
 import pickle
 import time
 
 import networkx as nx
-import requests
-import fastobo
 from rdkit import Chem
 import pandas as pd
+from chebi_utils.downloader import download_chebi_obo, download_chebi_sdf
+from chebi_utils.obo_extractor import build_chebi_graph
+from chebi_utils.sdf_extractor import extract_molecules
 
 class ChEBIData:
 
@@ -41,8 +40,7 @@ class ChEBIData:
 
     @property
     def sdf_path(self):
-        # sdf files are not versioned
-        return os.path.join(self.base_dir, f"ChEBI_complete.sdf")
+        return os.path.join(self.base_dir, f"chebi_v{self.chebi_version}", "chebi.sdf.gz")
 
     @property
     def processed_path(self):
@@ -50,25 +48,31 @@ class ChEBIData:
 
     def download_chebi(self) -> None:
         if not os.path.exists(self.chebi_path):
-            url = f"http://purl.obolibrary.org/obo/chebi/{self.chebi_version}/chebi.obo"
-            logging.info(f"Downloading ChEBI from {url}")
-            r = requests.get(url)
-            if r.status_code != 200:
-                logging.error(f"Failed to download ChEBI from {url}")
-                raise Exception(f"Got response {r.status_code}: {r.content}")
-            open(self.chebi_path, "wb").write(r.content)
+            logging.info(f"Downloading ChEBI v{self.chebi_version} obo file to {self.chebi_path}")
+            download_chebi_obo(self.chebi_version, os.path.dirname(self.chebi_path),
+                                os.path.basename(self.chebi_path))
 
     def process_chebi(self) -> dict:
         self.download_chebi()
         if not os.path.exists(self.chebi_dict_path):
-            with open(self.chebi_path, encoding="utf-8") as chebi_raw:
-                chebi = "\n".join(l for l in chebi_raw if not l.startswith("xref:"))
-            res = {}
-            for term in fastobo.loads(chebi):
-                if term and ":" in str(term.id) and not any(
-                        [clause.raw_tag() == "is_obsolete" and clause.raw_value() == "true" for clause in term]):
-                    term_id, term_properties = term_callback(term)
-                    res[term_id] = term_properties
+            graph = build_chebi_graph(self.chebi_path, top_class=None)
+            res = {
+                node: {
+                    "parents": [],
+                    "name": attrs.get("name"),
+                    "definition": attrs.get("definition"),
+                    "smiles": attrs.get("smiles"),
+                    "subset": attrs.get("subset"),
+                }
+                for node, attrs in graph.nodes(data=True)
+            }
+            for u, v, d in graph.edges(data=True):
+                relation = d.get("relation")
+                source, target = res[u], v
+                if relation == "is_a":
+                    source["parents"].append(target)
+                else:
+                    source.setdefault(relation, []).append(target)
             with open(self.chebi_dict_path, "wb") as f:
                 pickle.dump(res, f)
             return res
@@ -78,25 +82,22 @@ class ChEBIData:
 
     def download_sdf(self) -> None:
         if not os.path.exists(self.sdf_path):
-            url = "https://ftp.ebi.ac.uk/pub/databases/chebi/SDF/chebi.sdf.gz"
-            logging.info(f"Downloading ChEBI SDF data from {url}")
-            r = requests.get(url)
-            if r.status_code != 200:
-                logging.error(f"Failed to download ChEBI SDF data from {url}")
-                raise Exception(f"Got response {r.status_code}: {r.content}")
-            open(self.sdf_path, "wb").write(gzip.decompress(r.content))
+            logging.info(f"Downloading ChEBI v{self.chebi_version} SDF data to {self.sdf_path}")
+            download_chebi_sdf(self.chebi_version, os.path.dirname(self.sdf_path),
+                                os.path.basename(self.sdf_path))
 
     def sdf_file_to_mol(self):
         self.download_sdf()
-        supplier = Chem.SDMolSupplier(self.sdf_path, removeHs=False, strictParsing=False, sanitize=False)
-        for mol in supplier:
-            if mol is not None:
-                # turn aromatic bond types into single/double
-                try:
-                    Chem.Kekulize(mol)
-                except Chem.KekulizeException as e:
-                    logging.debug(f"{Chem.MolToSmiles(mol)} - {e}")
-                yield chebi_to_int(mol.GetProp("ChEBI ID")), mol
+        molecules = extract_molecules(self.sdf_path)
+        for _, row in molecules.iterrows():
+            mol = row["mol"]
+            # turn aromatic bond types into single/double
+            try:
+                Chem.Kekulize(mol)
+            except Chem.KekulizeException as e:
+                logging.debug(f"{Chem.MolToSmiles(mol)} - {e}")
+            chebi_id = row["chebi_id"]
+            yield chebi_id.split(":")[-1] if ":" in chebi_id else chebi_id, mol
 
     def process_data(self) -> pd.DataFrame:
         if not os.path.exists(self.processed_path):
@@ -136,49 +137,6 @@ class ChEBIData:
             return g
         with open(self.trans_hierarchy_path, "rb") as f:
             return pickle.load(f)
-
-
-def chebi_to_int(s):
-    return int(s[s.index(":") + 1:]) if ":" in s else s
-
-
-def term_callback(doc) -> (int, dict):
-    relationships = {}
-    parents = []
-    name = None
-    smiles = None
-    definition = None
-    subset = None
-    for clause in doc:
-        if isinstance(clause, fastobo.term.PropertyValueClause):
-            t = clause.property_value
-            if str(t.relation) == "http://purl.obolibrary.org/obo/chebi/smiles":
-                assert smiles is None
-                smiles = t.value
-        elif isinstance(clause, fastobo.term.RelationshipClause):
-            # e.g. has functional parent
-            if str(clause.typedef) in relationships:
-                relationships[str(clause.typedef)].append(
-                    chebi_to_int(str(clause.term))
-                )
-            else:
-                relationships[str(clause.typedef)] = [chebi_to_int(str(clause.term))]
-        elif isinstance(clause, fastobo.term.IsAClause):
-            parents.append(chebi_to_int(str(clause.term)))
-        elif isinstance(clause, fastobo.term.DefClause):
-            definition = clause.definition
-        elif isinstance(clause, fastobo.term.NameClause):
-            name = str(clause.name)
-        elif isinstance(clause, fastobo.term.SubsetClause):
-            subset = str(clause.subset)
-    return chebi_to_int(str(doc.id)), {
-        **relationships,
-        "parents": parents,
-        "name": name,
-        "definition": definition,
-        "smiles": smiles,
-        "subset": subset,
-    }
 
 
 if __name__ == "__main__":
