@@ -11,12 +11,12 @@ import matplotlib.pyplot as plt
 
 from chemlog.preprocessing.chebi_data import ChEBIData
 
-LABEL = [24866, 25696, 25697, 27369, 60334, 60194, 60466, 90799, 155837, 16670, 25676, 46761, 47923, 48030, 48545,
-         15841]
+LABEL = ["24866", "25696", "25697", "27369", "60334", "60194", "60466", "90799", "155837", "16670", "25676", "46761",
+         "47923", "48030", "48545", "15841"]
 
 
 def compare_results_with_chebi(results_dir, data):
-    results = pd.read_json(os.path.join(results_dir, "results.json"))
+    results = pd.read_json(os.path.join(results_dir, "results.json"), dtype={"chebi_id": str})
     print("Getting transitive closure")
     trans_hierarchy = data.get_trans_hierarchy()
     processed = data.processed
@@ -56,8 +56,8 @@ def html_color_bool(value):
 
 
 def compare_2_runs(results_dir1, results_dir2, data):
-    results1 = pd.read_json(os.path.join(results_dir1, "results.json"))
-    results2 = pd.read_json(os.path.join(results_dir2, "results.json"))
+    results1 = pd.read_json(os.path.join(results_dir1, "results.json"), dtype={"chebi_id": str})
+    results2 = pd.read_json(os.path.join(results_dir2, "results.json"), dtype={"chebi_id": str})
     trans_hierarchy = data.get_trans_hierarchy()
     processed = data.processed
     print(f"| ID | name | label | ChEBI | Run 1 | Run 2 |")
@@ -72,7 +72,7 @@ def compare_2_runs(results_dir1, results_dir2, data):
             pos_pred1 = label in row1["chebi_classes"]
             pos_pred2 = label in row2["chebi_classes"]
             if pos_pred1 != pos_pred2:
-                print(f"| {row1['chebi_id']} | {processed.loc[int(row1['chebi_id']), 'name']} | {label} | "
+                print(f"| {row1['chebi_id']} | {processed.loc[row1['chebi_id'], 'name']} | {label} | "
                       f"{html_color_bool(pos_label)} | {html_color_bool(pos_pred1)} | {html_color_bool(pos_pred2)} |")
 
 
@@ -85,14 +85,14 @@ def md_print_eval(eval_dict: dict, data: ChEBIData):
     df_labels = pd.DataFrame.from_dict(data.chebi, orient="index")
     for cls in eval_dict:
         e = eval_dict[cls]
-        label = f"{cls} ({df_labels.loc[int(cls), 'name']})" if cls != "micro" else cls
+        label = f"{cls} ({df_labels.loc[cls, 'name']})" if cls != "micro" else cls
         print(f"| {label} | {e['tps']} | {e['fps']} | {e['fns']} "
               f"| {e['tps'] / (e['tps'] + e['fps']):.3f} | {e['tps'] / (e['tps'] + e['fns']):.3f} "
               f"| {e['tps'] / (e['tps'] + 0.5 * (e['fps'] + e['fns'])):.3f}")
 
 
-def sample_results(results_dir, target_cls: int, data: ChEBIData, n_samples=10, sample_target="fns"):
-    results = pd.read_json(os.path.join(results_dir, "results.json"))
+def sample_results(results_dir, target_cls: str, data: ChEBIData, n_samples=10, sample_target="fns"):
+    results = pd.read_json(os.path.join(results_dir, "results.json"), dtype={"chebi_id": str})
     trans_hierarchy = data.get_trans_hierarchy()
     print("| id | name | ChEBI | ours |")
     print("| --- | --- | --- | --- |")
@@ -100,7 +100,7 @@ def sample_results(results_dir, target_cls: int, data: ChEBIData, n_samples=10, 
     while n_samples > 0:
         i = random.randint(0, len(results) - 1)
         row = results.loc[i]
-        id = int(row["chebi_id"])
+        id = row["chebi_id"]
         if not data.processed.loc[id, "subset"] == "3_STAR":
             continue
         pos_label = id in trans_hierarchy.successors(target_cls)
@@ -133,4 +133,4 @@ if __name__ == "__main__":
     data = ChEBIData(239)
     # md_print_eval(json.load(open(os.path.join(results_dir, "eval.json"), "rb")), data)
     #compare_2_runs(results_dir1, results_dir2, data)
-    sample_results(results_dir2, 24866, data, sample_target="tps")
+    sample_results(results_dir2, "24866", data, sample_target="tps")

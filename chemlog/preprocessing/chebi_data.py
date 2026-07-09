@@ -57,7 +57,7 @@ class ChEBIData:
         if not os.path.exists(self.chebi_dict_path):
             graph = build_chebi_graph(self.chebi_path, top_class=None)
             res = {
-                int(node): {
+                node: {
                     "parents": [],
                     "name": attrs.get("name"),
                     "definition": attrs.get("definition"),
@@ -68,7 +68,7 @@ class ChEBIData:
             }
             for u, v, d in graph.edges(data=True):
                 relation = d.get("relation")
-                source, target = res[int(u)], int(v)
+                source, target = res[u], v
                 if relation == "is_a":
                     source["parents"].append(target)
                 else:
@@ -96,7 +96,8 @@ class ChEBIData:
                 Chem.Kekulize(mol)
             except Chem.KekulizeException as e:
                 logging.debug(f"{Chem.MolToSmiles(mol)} - {e}")
-            yield int(row["chebi_id"]), mol
+            chebi_id = row["chebi_id"]
+            yield chebi_id.split(":")[-1] if ":" in chebi_id else chebi_id, mol
 
     def process_data(self) -> pd.DataFrame:
         if not os.path.exists(self.processed_path):
