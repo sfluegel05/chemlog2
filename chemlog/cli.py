@@ -255,8 +255,8 @@ CLASSIFIERS = {
 @click.option('--begin-molecule', '-b', type=int, default=0,
               help='Start at this molecule index (applied after other selectors)')
 @click.option('--n-molecules', '-l', type=int, default=-1, help='End after this many molecules')
-@click.option('--n-workers', '-w', type=int, default=mp.cpu_count(),
-              help='Number of worker processes to use (defaults to number of CPU cores), use 0 for no multiprocessing')
+@click.option('--n-workers', '-w', type=int, default=0,
+              help='Number of worker processes to use, use 0 (default) for no multiprocessing')
 def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, only_peptides, only_3star, begin_molecule,
                    n_molecules, n_workers):
     json_logger = TimestampedLogger(None, f"{strategy}_{run_name}" if run_name is not None else strategy, debug_mode)
@@ -310,7 +310,7 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
     n_workers = min(n_workers, input_q.qsize())
     logging.info(f"Starting {n_workers} worker processes")
     input_size = len(data_filtered)
-    for i in range(n_workers):
+    for _ in range(n_workers):
         input_q.put(None)
 
     pbar = tqdm.tqdm(total=input_size, desc=f"Classifying with {strategy.upper()}")
@@ -328,6 +328,10 @@ def classify_chebi(chebi_version, strategy, run_name, debug_mode, molecules, onl
         if input_size < 10 or (i % (input_size // 10)) == 0:
             json_logger.save_items(f"classify_{strategy}", results)
 
+    pbar.close()
+    for p in processes:
+        p.join()
+
     logging.info(f"Finished classifying {i}/{input_size} molecules")
     json_logger.save_items(f"classify_{strategy}", results)
     for classifier in classifier_instances.values():
@@ -343,7 +347,7 @@ def _supply_chebi_data(chebi_version, molecules, only_3star, only_peptides=False
     else:
         data_filtered = data
     if only_3star:
-        data_filtered = data_filtered[data_filtered["subset"] == "3_STAR"]
+        data_filtered = data_filtered[data_filtered["subset"][0] == "3"]
     if only_peptides:
         trans_hierarchy = data_cls.get_trans_hierarchy()
         data_filtered = data_filtered.loc[list(set.intersection(set(nx.descendants(trans_hierarchy, "16670")),
@@ -435,7 +439,7 @@ def verify(chebi_version, results_dir, debug_mode, molecules, only_3star):
 
     molecules = [str(m) for m in molecules]
     results = [r for r in results if (len(molecules) == 0 or r["chebi_id"] in molecules) and (
-            not only_3star or data.processed.loc[r["chebi_id"], "subset"] == "3_STAR")]
+            not only_3star or data.processed.loc[r["chebi_id"], "subset"][0] == "3")]
 
     save_results_at = len(results) / 4
 
