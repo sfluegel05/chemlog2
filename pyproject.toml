@@ -12,6 +12,7 @@ authors = [
     { name = "sfluegel05", email = "simon.fluegel@uos.de" },
 ]
 dependencies = [
+    "chebi_utils",
     "fastobo",
     "networkx",
     "pandas",
