@@ -23,6 +23,7 @@ dependencies = [
     "numpy>=2.0.0",
     "multiprocess",
     "clingo",
+    "chebi-utils",
 ]
 
 [project.optional-dependencies]
